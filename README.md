@@ -84,25 +84,12 @@ EOF
 # Install JupyterHub
 # This may take a couple of minutes, as the Docker images are being pre-pulled
 # into every node in the Kubernetes namespace
-helm upgrade --install $JHUB_HELM_RELEASE jupyterhub/jupyterhub \
-     --namespace "$JHUB_K8S_NAMESPACE" --version="$JHUB_VERSION" \
-     --values etc/values.yaml --values secrets/proxy.yaml --timeout=800
+./bin/deploy.sh
 
-# Find our external IP. This may take a few minutes
-HUBIP=
-while [[ -z "$HUBIP" ]]; do
-	HUBIP=$(kubectl --namespace="$JHUB_K8S_NAMESPACE" get svc proxy-public --output jsonpath='{.status.loadBalancer.ingress[0].ip}')
-	sleep 1
-done
+# Add our external IP to DNS. This may take a few minutes
+./bin/add-to-dns.sh
 
-# Create a new DNS entry pointing to the external API (delete any old ones)
-DNS_RECORD_IDS=$(doctl compute domain records list $INTERNAL_DOMAIN -o json | jq ".[] | select( .name == \"$HUB_HOSTNAME\") | .id ")
-for ID in $DNS_RECORD_IDS; do
-	doctl compute domain records delete $INTERNAL_DOMAIN $ID -f
-done
-doctl compute domain records create $INTERNAL_DOMAIN --record-type=A --record-name=$HUB_HOSTNAME --record-data=$HUBIP --record-ttl 30
-
-# At this point you should be able to access JupyterHub via http://$FQDN
+# At this point you should be able to access JupyterHub via $FQDN
 curl -L http://$FQDN
 ```
 
@@ -135,9 +122,7 @@ $(cat secrets/certbot/config/live/$FQDN/fullchain.pem |  sed 's/^/        /')
 EOF
 
 ## Redeploy with https turned on
-helm upgrade --install $JHUB_HELM_RELEASE jupyterhub/jupyterhub \
-     --namespace "$JHUB_K8S_NAMESPACE" --version="$JHUB_VERSION" \
-     --values etc/values.yaml --values secrets/proxy.yaml --values secrets/https.yaml --timeout=800
+./bin/deploy.sh
 ```
 
 ## Optional: GitHub Authentication
