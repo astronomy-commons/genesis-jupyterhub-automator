@@ -31,12 +31,12 @@ brew install kubernetes-helm
 brew install certbot
 ```
 
-Then initialize Digital Ocean authentication:
+Then authenticate against Digital Ocean by running:
 ```
 doctl auth init
 ```
 This will ask you for your DO Personal Access token, [which you can manage
-and create here](https://cloud.digitalocean.com/account/api/tokens)
+and create here](https://cloud.digitalocean.com/account/api/tokens).
 
 ## Configuration
 
@@ -47,10 +47,9 @@ Run:
             --letsencrypt-email=<me@example.com>
 ```
 
-Configuration resides in two key files:
+This will generate configuration in `etc/`. Most of it resides in two key files:
 * `etc/Makefile.config`: Kubernetes cluster and high-level JupyterHub definitions
 * `etc/values.yaml`: JupyterHub customizations
-
 Edit and customize them as necessary.
 
 Note: to find out what node types are available for setting `SIZE` parameter in `config.sh`

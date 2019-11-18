@@ -104,6 +104,28 @@ add_required()
 	done < <(parse_template $1)
 }
 
+check_prerequisites()
+{
+	# see if we have doctl
+	hash doctl 2>/dev/null && echo "prereq: found doctl" || { errmsg "error: no doctl on path. Install Digital Ocean CLI tools."; exit -1; }
+
+	# see if we're authenticated
+	doctl compute droplet list >/dev/null 2>&1 && echo "prereq: logged into DO" || { errmsg "error: issues authenticating to Digital Ocean.."; exit -1; }
+
+	# see if we have kubectl
+	hash kubectl 2>/dev/null && echo "prereq: found kubectl" || { errmsg "error: no kubectl on path. Install Kuberbetes CLI tools."; exit -1; }
+
+	# see if we have helm
+	hash helm 2>/dev/null && echo "prereq: found helm" || { errmsg "error: no helm on path. Install Helm CLI tools."; exit -1; }
+
+	# see if we have certbot
+	hash certbot 2>/dev/null && echo "prereq: found certbot" || { errmsg "error: no certbot on path. Install certbot tools."; exit -1; }
+
+	echo
+}
+
+############################
+
 gen_proxy_secret()
 {
 	# don't regenerate if it already exists
@@ -286,6 +308,9 @@ for key in ${REQUIRED[@]}; do
 	fi
 done
 test "$err" == "1" && { errmsg; errmsg "run $0 -h for help"; exit -1; }
+
+# Check prerequisites
+check_prerequisites
 
 # generate output files
 mkdir -p etc/secrets
