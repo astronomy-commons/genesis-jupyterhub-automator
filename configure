@@ -1,0 +1,299 @@
+#!/bin/bash
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$DIR"
+
+TEMPLATES=($(ls templates/config/config.sh.* | grep -v '.*~'))
+CONFIG=etc/Makefile.config
+
+#############################################################################3
+# Functions
+#############################################################################3
+
+# Extract command-line options
+option_to_varname()
+{
+	# takes an option such as --with-foo as an argument
+	# and returns the corresponding variable name (FOO)
+	key="${1%=*}"
+	key="${key#--}"
+	key="${key#with-}"
+	key="${key//-/_}"
+	echo "$key" | awk '{print toupper($0)}'
+}
+
+# Convert a variable name to equivalent option
+varname_to_option()
+{
+	opt="${1//_/-}"
+	opt=$(echo "$opt" | awk '{print tolower($0)}')
+	echo "--$opt"
+}
+
+
+# Output an error message
+errmsg()
+{
+	echo "$@" 1>&2
+}
+
+# Parse a template files
+# args: $1 -- template filename
+parse_template()
+{
+	while IFS= read -r line
+	do
+		# expected format:
+		# VAR=VALUE # DOCSTRING
+		var=${line%=*}
+
+		val=${line#*=}
+		val=$(echo "${val%#*}" | sed 's/^[[:blank:]]*//;s/[[:blank:]]*$//' )
+
+		cmt=$(echo "$line" | cut -s -d '#' -f 2- | sed 's/^[[:blank:]]*//;s/[[:blank:]]*$//')
+
+		req=$(echo "$cmt" | grep -q "(REQUIRED)" && echo "1")
+
+		echo "$var|||$val|||$cmt|||$req"
+	done < <(grep -E '^[^#]\w+=.*$' $1)
+}
+
+# Print usage info
+usage()
+{
+	echo "usage:   $0 --provider=<provider_id> [options]"
+	echo
+
+	echo "options:"
+	echo
+	
+	for TEMPLATE in "${TEMPLATES[@]}"; do
+		providerid="${TEMPLATE##*.}"
+		providername=$(head -n 1 $TEMPLATE | sed 's/^# *//')
+
+		echo "$providername (--provider=$providerid):"
+		while IFS= read -r s
+		do
+			var="${s%%"|||"*}"; s=${s#*"|||"}
+			val="${s%%"|||"*}"; s=${s#*"|||"}
+			cmt="${s%%"|||"*}"; s=${s#*"|||"}
+			req="${s%%"|||"*}"; s=${s#*"|||"}
+
+			printf "    %-45s %s\n" "$(varname_to_option $var)=<$val>" "$cmt"
+
+#			echo "var=[[$var]] val=[[$val]] cmt=[[$cmt]]"
+		done < <(parse_template $TEMPLATE)
+		echo
+	done
+}
+
+# Collect all required options from a template file
+add_required()
+{
+	while IFS= read -r s
+	do
+		var="${s%%"|||"*}"; s=${s#*"|||"}
+		val="${s%%"|||"*}"; s=${s#*"|||"}
+		cmt="${s%%"|||"*}"; s=${s#*"|||"}
+		req="${s%%"|||"*}"; s=${s#*"|||"}
+
+		if [[ $req == 1 ]]; then
+			REQUIRED+=($var)
+		fi
+
+	done < <(parse_template $1)
+}
+
+gen_proxy_secret()
+{
+	# don't regenerate if it already exists
+	if [[ -f etc/secrets/proxy.yaml ]]; then
+		echo "skipping etc/secrets/proxy.yaml; already exists."
+		return
+	fi
+
+	cat > etc/secrets/proxy.yaml <<-EOF
+	proxy:
+	  secretToken: "$(openssl rand -hex 32)"
+	EOF
+	
+	echo "generated etc/secrets/proxy.yaml"
+}
+
+gen_github_auth()
+{
+	if [[ -z $GITHUB_OAUTH_CLIENT_ID || -z $GITHUB_OAUTH_SECRET ]]; then
+		if [[ -f "etc/secrets/github-auth.yaml" ]]; then
+			rm -f "etc/secrets/github-auth.yaml"
+			echo "disabling GitHub authentication (rerun with --github-oauth-client-id and --github-oauth-secret to re-enable)"
+		fi
+		return
+	fi
+
+	GITHUB_OAUTH_CALLBACK="https://$HUB_FQDN/hub/oauth_callback"
+
+	# FIXME: this silently deletes any double quotes in the template file
+	eval "echo \"$(<templates/helm/github-auth.yaml)\"" > "etc/secrets/github-auth.yaml"
+
+	echo "generated etc/secrets/github-auth.yaml"
+}
+
+gen_ssl()
+{
+	if [[ -z $LETSENCRYPT_EMAIL ]]; then
+		if [[ -f "etc/secrets/ssl.yaml" ]]; then
+			rm -f "etc/secrets/ssl.yaml"
+			echo "disabling SSL (rerun with --letsencrypt-email=owner-email@example.com to re-enable)"
+		fi
+		return
+	fi
+
+	# don't regenerate if it already exists
+	if [[ -f etc/secrets/ssl.yaml ]]; then
+		echo "skipping etc/secrets/ssl.yaml; already exists."
+		return
+	fi
+
+	# generate new certificates
+	OUTPUT=$(certbot -d "$HUB_FQDN" \
+		--keep --manual \
+		--preferred-challenges dns certonly \
+		--config-dir etc/secrets/certbot/config --work-dir etc/secrets/certbot/work --logs-dir etc/secrets/certbot/logs \
+		-m "$LETSENCRYPT_EMAIL" \
+		--agree-tos --no-eff-email --manual-public-ip-logging-ok \
+		--manual-auth-hook=bin/certbot-auth.sh 2>&1)
+	if [[ $? -ne 0 ]]; then
+		errmsg "======="
+		errmsg "$OUTPUT"
+		errmsg "======="
+		errmsg "error: something went wrong with SSL certificate generation; see above. aborting.."
+		exit -1
+	fi
+
+	cat > etc/secrets/ssl.yaml <<-EOF
+	proxy:
+	  https:
+	    hosts:
+	      - $HUB_FQDN
+	    type: manual
+	    manual:
+	      key: |
+	$(cat etc/secrets/certbot/config/live/$HUB_FQDN/privkey.pem |  sed 's/^/        /')
+	      cert: |
+	$(cat etc/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
+	EOF
+
+	echo "generated etc/secrets/ssl.yaml"
+}
+
+gen_config() {
+	# check if we're overwriting
+	#if [[ -f "$CONFIG" && $FORCE != "1" ]]; then
+	#	errmsg "error: $CONFIG already exists. refusing to proceed in an abundance of caution."
+	#	exit -1
+	#fi
+
+	# generate the include file with configuration
+	mkdir -p "$(dirname $CONFIG)"
+	#eval "echo \"$(<$TEMPLATE)\"" > "$CONFIG"
+	while IFS= read -r s
+	do
+		var="${s%%"|||"*}"; s=${s#*"|||"}
+		val="${s%%"|||"*}"; s=${s#*"|||"}
+		cmt="${s%%"|||"*}"; s=${s#*"|||"}
+		req="${s%%"|||"*}"; s=${s#*"|||"}
+
+		echo "# $cmt"
+		# if this variable was overridden on the command line, replace the default value
+		if [[ ! -z "${!var}" ]]; then
+			val="${!var}"
+		fi
+		echo "$var=$val"
+		echo "export $var"
+		echo
+	done < <(parse_template $TEMPLATE) > "$CONFIG"
+	echo "generated $CONFIG."
+}
+
+gen_values_yaml() {
+	# copy default values.yaml
+	cp templates/helm/values.yaml etc/values.yaml
+	echo "generated etc/values.yaml"
+}
+
+#############################################################################3
+# Main
+#############################################################################3
+
+# Parse the command line
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+	key="$1"
+	case "$key" in
+		-h|--help)
+			usage
+			exit -1
+		;;
+		
+		-f|--force)
+			FORCE=1
+			shift;
+		;;
+
+		# Simple options with an argument
+		--*=*)
+			eval "$(option_to_varname $key)='${key#*=}'"
+			shift;
+		;;
+
+		--*)
+			eval "$(option_to_varname $key)=$2"
+			shift;
+			shift;
+		;;
+
+		*)
+		POSITIONAL+=("$1")
+		shift;
+		;;
+	esac
+done
+set -- "${POSITIONAL[@]}" # restore positional parameters
+
+# Discover provider
+if [[ -z "$PROVIDER" ]]; then
+	errmsg "error: --provider must be specified"
+	exit -1
+fi
+TEMPLATE="templates/config/config.sh.$PROVIDER"
+if [[ ! -f $TEMPLATE ]]; then
+	errmsg "error: provider '$PROVIDER' unknown."
+	exit -1
+fi
+
+# Discover all required options for this provider
+REQUIRED=(PROVIDER)
+add_required $TEMPLATE
+
+# Verify we have all required options
+for key in ${REQUIRED[@]}; do
+	if [[ -z ${!key} ]]; then
+		opt="${key//_/-}"
+		opt=$(echo "$opt" | awk '{print tolower($0)}')
+		errmsg "error: --$opt=<$key> must be specified for provider '$PROVIDER'."
+		err=1
+	fi
+done
+test "$err" == "1" && { errmsg; errmsg "run $0 -h for help"; exit -1; }
+
+# generate output files
+mkdir -p etc/secrets
+gen_config
+gen_values_yaml
+gen_proxy_secret
+gen_ssl
+gen_github_auth
+
+echo
+echo "success. run 'make all' to (re)deploy your cluster."

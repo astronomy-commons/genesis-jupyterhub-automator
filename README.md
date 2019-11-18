@@ -1,14 +1,29 @@
-# Standing up a Genesis Platform instance on Digital Ocean Kubernetes
+# Genesis JupyterHub Deployment Repository
 
 This is a very condensed summary of how to create an instance of the Genesis
-JupyterHub platform on Digital Ocean. If you're new to JupyterHub on
-Kubernetes,
+JupyterHub on [Digital Ocean](https://www.digitalocean.com/). Genesis
+JupyterHub is a distribution of JupyterHub with a Jupyter image containing:
+
+* Astronomy event streaming clients (`genesis.streaming`)
+* Tools for scalable queries of data in cloud-based data lakes (TBD)
+* Numerous preinstalled astronomy/astrophysics packages.
+
+This repository contains:
+* Instructions to create a Kubernetes cluster on DigitalOcean
+* Helm charts and pre-made configs to install the JupyterHub onto a Kubernetes cluster.
+* Dockerfiles for customized JupyterHub and Jupyter images
+
+If you're new to JupyterHub on Kubernetes,
 [zero-to-jupyterhub](https://zero-to-jupyterhub.readthedocs.io/en/latest/)
 is a stongly suggested supplemental reading.
 
 ## Prerequisites
 
-Assuming you're on a Mac an using brew, install the necessary packages with:
+To set this up, you'll need:
+* A Digital Ocean ("DO") account
+* Command line utilities for DO and kubernetes
+
+Assuming you're on a Mac an using brew, you can install the necessary packages with:
 ```
 brew install doctl
 brew install kubernetes-cli
@@ -16,128 +31,50 @@ brew install kubernetes-helm
 brew install certbot
 ```
 
-Initialize Digital Ocean authentication:
+Then initialize Digital Ocean authentication:
 ```
 doctl auth init
 ```
-This will ask you for your DO API token, which you can get from the DO
-website.
+This will ask you for your DO Personal Access token, [which you can manage
+and create here](https://cloud.digitalocean.com/account/api/tokens)
 
 ## Configuration
 
-Edit the high-level configuration file `config.sh`, then source it:
+Run:
 ```
-. etc/config.sh
+./configure --provider=do --hub-fqdn=<hub.example.com> \
+            --github-oauth-client-id=.... --github-oauth-secret=.... \
+            --letsencrypt-email=<me@example.com>
 ```
+
+Configuration resides in two key files:
+* `etc/Makefile.config`: Kubernetes cluster and high-level JupyterHub definitions
+* `etc/values.yaml`: JupyterHub customizations
+
+Edit and customize them as necessary.
+
 Note: to find out what node types are available for setting `SIZE` parameter in `config.sh`
 (the "slugs"), run `doctl compute size list`.
 
+## Deployment
 
-## Create a Kubernetes Cluster
-
-This sets up a kubernetes cluster with Helm and the web dashboard:
-```
-# Create cluster. This may take ~10 minutes to execute on DO
-doctl k8s cluster create $CLUSTER_NAME --region $REGION --node-pool="name=$NODE_POOL_NAME;size=$SIZE;count=$NODES" --version=$K8S_VERSION
-
-# Switch the context to the cluster we just created, so future commands apply to it:
-kubectl config use-context $CONTEXT
-
-# Install Helm (tiller)
-kubectl --namespace kube-system create serviceaccount tiller
-kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
-helm init --service-account tiller --wait
-kubectl patch deployment tiller-deploy --namespace=kube-system --type=json \
-  --patch='[{"op": "add", "path": "/spec/template/spec/containers/0/command", "value": ["/tiller", "--listen=localhost:44134"]}]'
-```
-
-### Optional: Add the Dashboard GUI
+To deploy JupyterHub, run:
 
 ```
-# Set up k8s web dashboard (check for new versions at https://github.com/kubernetes/dashboard/releases)
-kubectl delete ns kubernetes-dashboard # this will err if you're installing for the first time; that's OK.
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-beta6/aio/deploy/recommended.yaml
-
-# Set up an admin user, and get their secret token which we'll use to access the web interface
-kubectl apply -f deploy/create-dashboard-admin-user.yaml
-kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}') | grep -E '^token:'
-kubectl proxy &
-
-# then go to http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#/login to access the dashboard
-# with the token you just generated.
+make
 ```
 
-## Install JupyterHub
-
-```
-# Install JupyterHub helm repository
-helm repo add jupyterhub https://jupyterhub.github.io/helm-chart/
-helm repo update
-
-# Generate the secret internal JupyterHub proxy communication token
-mkdir -p secrets
-cat > secrets/proxy.yaml <<-EOF
-proxy:
-  secretToken: "$(openssl rand -hex 32)"
-EOF
-
-# Install JupyterHub
-# This may take a couple of minutes, as the Docker images are being pre-pulled
-# into every node in the Kubernetes namespace
-./bin/deploy.sh
-
-# Add our external IP to DNS. This may take a few minutes
-./bin/add-to-dns.sh
-
-# At this point you should be able to access JupyterHub via $FQDN
-curl -L http://$FQDN
-```
-
-## Setting up SSL
-
-Manual setup, while automatics are broken (see https://github.com/jupyterhub/zero-to-jupyterhub-k8s/issues/1448).
-You'll have to follow the `certbot` instructions on how to manually add a TXT record to your domain config.
-
-Note: this won't work with JupyterHub < 0.9.0-alpha.1.028.00bc15c -- see
-https://github.com/jupyterhub/zero-to-jupyterhub-k8s/issues/806 -- which is
-why we're using this version (rather than the stable one).
-
-```
-## Pass the certbot challenge to get the certificates
-mkdir -p secrets/certbot/{config,logs,work}
-certbot -d "$FQDN" --manual --preferred-challenges dns certonly --config-dir secrets/certbot/config --work-dir secrets/certbot/work --logs-dir secrets/certbot/logs -m "$EMAIL" --agree-tos
-
-## Copy new certs into a yaml file
-cat > secrets/https.yaml <<-EOF
-proxy:
-  https:
-    hosts:
-      - $FQDN
-    type: manual
-    manual:
-      key: |
-$(cat secrets/certbot/config/live/$FQDN/privkey.pem |  sed 's/^/        /')
-      cert: |
-$(cat secrets/certbot/config/live/$FQDN/fullchain.pem |  sed 's/^/        /')
-EOF
-
-## Redeploy with https turned on
-./bin/deploy.sh
-```
-
-## Optional: GitHub Authentication
-
-To set up GitHub authentication, copy `secrets/auth.yaml.example` to
-`secrets/auth.yaml` and follow the instructions at
-[zero-to-jupyterhub](https://zero-to-jupyterhub.readthedocs.io/en/latest/authentication.html#github)
-website.
+This will:
+* Create a new Kubernetes cluster, if needed
+* Installs Helm, if needed
+* Installs Dashboard, if needed
+* Installs JupyterHub with Genesis customizations
 
 ## Deleting everything
 
+Run:
 ```
-helm delete $JHUB_HELM_RELEASE --purge
-kubectl delete namespace "$JHUB_K8S_NAMESPACE"
-doctl k8s cluster delete $CLUSTER_NAME
+make destroy
 ```
 
 ## Useful commands

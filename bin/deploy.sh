@@ -4,11 +4,10 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR/.."
 
-# Source configuration
-. etc/config.sh
+set -x
 
 # Enumerate all secrets
-SECRETS=( $(ls secrets/*.yaml 2>/dev/null) )
+SECRETS=( $(ls etc/secrets/*.yaml 2>/dev/null) )
 
 # Run Helm
 helm upgrade --install $JHUB_HELM_RELEASE \
