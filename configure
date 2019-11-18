@@ -121,6 +121,10 @@ check_prerequisites()
 	# see if we have certbot
 	hash certbot 2>/dev/null && echo "prereq: found certbot" || { errmsg "error: no certbot on path. Install certbot tools."; exit -1; }
 
+	# see if the domain has been properly set up
+	DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
+	doctl compute domain records list "$DOMAIN" >/dev/null 2>&1 && echo "prereq: DO is managing $DOMAIN" || { errmsg "error: domain not found. Please delegate '$DOMAIN' to DO's DNS service."; exit -1; }
+
 	echo
 }
 
