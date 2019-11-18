@@ -28,7 +28,7 @@ dashboard: helm
 	  (kubectl delete ns kubernetes-dashboard 2>/dev/null || true) && \
 	  kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-beta6/aio/deploy/recommended.yaml && \
 	  \
-	  kubectl apply -f deploy/create-dashboard-admin-user.yaml && \
+	  kubectl apply -f templates/helm/create-dashboard-admin-user.yaml && \
 	  mkdir -p etc/secrets && \
 	  \
 	  kubectl -n kubernetes-dashboard describe secret \

@@ -1,0 +1,14 @@
+auth:
+  type: github
+  github:
+    clientId: $GITHUB_OAUTH_CLIENT_ID
+    clientSecret: $GITHUB_OAUTH_SECRET
+    callbackUrl: $GITHUB_OAUTH_CALLBACK
+#    orgWhitelist:
+#      - "dirac-institute"
+#    scopes:
+#      - "read:org"
+  admin:
+    access: true
+    users:
+      - mjuric
