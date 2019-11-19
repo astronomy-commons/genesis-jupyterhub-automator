@@ -199,11 +199,12 @@ gen_github_auth()
 		fi
 		return
 	fi
+	github_auth=1
 
 	GITHUB_OAUTH_CALLBACK="https://$HUB_FQDN/hub/oauth_callback"
 
 	# FIXME: this silently deletes any double quotes in the template file
-	cp_with_subst templates/helm/github-auth.yaml etc/secrets/github-auth.yaml
+	cp_with_subst templates/helm/github-auth.yaml.sht etc/secrets/github-auth.yaml
 
 	echo "generated etc/secrets/github-auth.yaml"
 }
@@ -303,12 +304,17 @@ gen_config() {
 	NODE_MEMORY=${NODEPROPS[1]}
 	NODE_PRICE=${NODEPROPS[2]}
 
+	# CPU and memory overheads
+	# Estimated by inspecting "kubectl describe node s-4vcpu-8gb-a6hd"
+	OH_MEM=1.5
+	OH_CPU=1
+
 	# how many users can use this node? keep ~0.5CPU for overhead
-	node_users_cpu=$(echo "scale=0; ($NODE_CPU-0.5)/$USER_CPU" | bc)
+	node_users_cpu=$(echo "scale=0; ($NODE_CPU-$OH_CPU)/$USER_CPU" | bc)
 	[[ node_users_cpu -gt 0 ]] || { errmsg "error: number of vcpus in a node is too small to accommodat even a single user. change --size or --user-cpu."; exit -1; }
 
 	# how many users can use this node? keep ~0.5GiB for overhead
-	node_users_ram=$(echo "scale=0; ($NODE_MEMORY/1024-0.5)/$USER_MEMORY" | bc)
+	node_users_ram=$(echo "scale=0; ($NODE_MEMORY/1024-$OH_MEM)/$USER_MEMORY" | bc)
 	[[ node_users_ram -gt 0 ]] || { errmsg "error: node memory is too small to accommodat even a single user. change --size or --user-memory."; exit -1; }
 
 	# total users
@@ -320,22 +326,44 @@ gen_config() {
 	storage_cost_per_user_per_day=$(printf %.2f $(echo "0.0015*$USER_DISK*24" | bc))
 
 	# progress report
+	echo "generated $CONFIG"
+}
+
+gen_values_yaml() {
+	# copy default values.yaml
+	cp_with_subst templates/helm/values.yaml.sht etc/values.yaml
+	echo "generated etc/values.yaml"
+}
+
+show_summary() {
+	echo
 	echo "========================================================================="
-	echo "Cluster config:"
+	echo ""
+	echo "  JupyterHub Deployment Configuration Summary:"
+	echo ""
+	echo "  Cluster:"
 	echo "    ${NODES} nodes, ${NODE_CPU}vcpus and ${NODE_MEMORY}mib each ($SIZE instance type)."
 	echo "      note: 0.5vcpus and 0.5GiB of each node are reserved by the system."
 	echo "    Enough for ~$users simultaneous users (at ${USER_CPU}vcpus and ${USER_MEMORY}gib per user)"
 	echo "    Expected cost: "
 	echo "      Compute cluster: \$$cost_per_day/day"
 	echo "      User storage: \$$storage_cost_per_user_per_day/user/day"
+	echo ""
+	echo "  Environment:"
+	echo "    Hub address will be https://$HUB_FQDN"
+	echo "      Let's Encrypt SSL cert will be registered to $LETSENCRYPT_EMAIL"
+if [[ -n $github_auth ]]; then
+	echo "    Authenticating via GitHub"
+if [[ -n $GITHUB_ORG ]]; then
+	echo "      Only users belonging to $GITHUB_ORG can log in."
+else
+	echo "      Any GitHub user can log in."
+fi
+fi
+	echo "    Each user will get ${USER_DISK}GiB of disk space"
+	echo ""
 	echo "========================================================================="
-	echo "generated $CONFIG:"
-}
-
-gen_values_yaml() {
-	# copy default values.yaml
-	cp_with_subst templates/helm/values.yaml etc/values.yaml
-	echo "generated etc/values.yaml"
+	echo
 }
 
 #############################################################################3
@@ -405,7 +433,7 @@ done
 test "$err" == "1" && { errmsg; errmsg "run $0 -h for help"; exit -1; }
 
 # Check prerequisites
-##check_prerequisites
+check_prerequisites
 
 # generate output files
 mkdir -p etc/secrets
@@ -415,5 +443,8 @@ gen_proxy_secret
 gen_ssl
 gen_github_auth
 
-echo
-echo "success. run 'make all' to (re)deploy your cluster."
+show_summary
+
+echo "========================================================================="
+echo "   Configuration success. run 'make all' to (re)deploy your cluster."
+echo "========================================================================="

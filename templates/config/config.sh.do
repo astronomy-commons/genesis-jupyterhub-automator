@@ -29,6 +29,7 @@ LETSENCRYPT_EMAIL=			# E-mail for Let's Encrypt (REQUIRED)
 # GitHub Authentication
 GITHUB_OAUTH_CLIENT_ID=			# GitHub OAuth App Client ID
 GITHUB_OAUTH_SECRET=			# OAuth client secret
+GITHUB_ORG=				# If set, allow only users from this org
 
 # JupyterHub user settings
 ADMIN_USER=				# User ID of the JupyterHub administraator

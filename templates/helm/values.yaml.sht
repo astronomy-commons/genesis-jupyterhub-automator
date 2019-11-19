@@ -1,4 +1,4 @@
-##vars ADMIN_USER USER_DISK USER_CPU
+##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY
 jupyterhub:
   hub:
     extraConfig:
