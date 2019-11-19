@@ -1,3 +1,4 @@
+##vars ADMIN_USER USER_DISK USER_CPU
 jupyterhub:
   hub:
     extraConfig:
@@ -6,6 +7,11 @@ jupyterhub:
   cull:
     enabled: true
     timeout: 3600
+auth:			##if -n $ADMIN_USER
+  admin:		##if -n $ADMIN_USER
+    access: true	##if -n $ADMIN_USER
+    users:		##if -n $ADMIN_USER
+      - $ADMIN_USER	##if -n $ADMIN_USER
 hub:
   image:
     name: mjuric/k8s-hub-dirac
@@ -18,13 +24,11 @@ singleuser:
     name: mjuric/genesis-notebook
     tag: 0.1
   memory:
-    guarantee: 4G
-    limit: 8G
+    guarantee: ${USER_MEMORY}G
   cpu:
-    guarantee: 3.1
-    limit: 8
+    guarantee: $USER_CPU
   storage:
-    capacity: 1Gi
+    capacity: ${USER_DISK}Gi
   lifecycleHooks:
     postStart:
       exec:
@@ -36,8 +40,3 @@ singleuser:
             git clone https://github.com/dirac-institute/genesis-client
             ln -s ../genesis-client/genesis .ipython/genesis
             gitpuller https://github.com/dirac-institute/genesis-streaming-demo master genesis-streaming-demo
-
-#        command: ["rm", "-rf", "genesis-client", ".ipython/genesis"]
-#        command: ["git", "clone", "https://github.com/dirac-institute/genesis-client"]
-#        command: ["ln", "-s", "../genesis-client/genesis", ".ipython/genesis"]
-#        command: ["gitpuller", "https://github.com/dirac-institute/genesis-streaming-demo", "master", "genesis-streaming-demo"]

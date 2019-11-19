@@ -24,8 +24,14 @@ JHUB_K8S_NAMESPACE=genesis		# The k8s namespace to install into
 HUB_FQDN=				# The domain name of the hub (REQUIRED)
 
 # Let's Encrypt SSL cerfiticates information
-LETSENCRYPT_EMAIL=			# E-mail for Let's Encrypt
+LETSENCRYPT_EMAIL=			# E-mail for Let's Encrypt (REQUIRED)
 
 # GitHub Authentication
 GITHUB_OAUTH_CLIENT_ID=			# GitHub OAuth App Client ID
 GITHUB_OAUTH_SECRET=			# OAuth client secret
+
+# JupyterHub user settings
+ADMIN_USER=				# User ID of the JupyterHub administraator
+USER_DISK=1				# Amount of disk per user, in gigabytes
+USER_CPU=0.5				# Number of CPU cores to allocate, per user
+USER_MEMORY=1.0				# GB of RAM to allocate, per user

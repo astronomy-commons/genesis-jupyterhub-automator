@@ -1,14 +1,11 @@
+##vars GITHUB_ORG GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_SECRET GITHUB_OAUTH_CALLBACK
 auth:
   type: github
   github:
     clientId: $GITHUB_OAUTH_CLIENT_ID
     clientSecret: $GITHUB_OAUTH_SECRET
     callbackUrl: $GITHUB_OAUTH_CALLBACK
-#    orgWhitelist:
-#      - "dirac-institute"
-#    scopes:
-#      - "read:org"
-  admin:
-    access: true
-    users:
-      - mjuric
+    orgWhitelist:				##if -n $GITHUB_ORG
+      - "$GITHUB_ORG"				##if -n $GITHUB_ORG
+    scopes:					##if -n $GITHUB_ORG
+      - "read:org"				##if -n $GITHUB_ORG

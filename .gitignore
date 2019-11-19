@@ -1,3 +1,4 @@
 secrets/certbot
 secrets/*.yaml
 *~
+*.cache.json
