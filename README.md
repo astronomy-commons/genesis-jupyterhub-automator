@@ -1,5 +1,11 @@
 # JupyterHub Deployment Automator
 
+Zero-to-Jupyterhub in minutes.
+
+![Automator in action](docs/figures/jupyterhub-automator.gif)
+
+##
+
 The tools in this repository automates the process of creating an instance
 of JupyterHub on [Digital Ocean](https://www.digitalocean.com/)'s managed
 Kubernetes (a.k.a.  k8s) instance.  We primarily aim to simplify the
@@ -106,9 +112,14 @@ will be the hostname of the JupyterHub you'll be standing up. You should use
 the same hostname in the 'Homepage URL' field (but with 'https://'
 prepended).
 
-After you've created the app, jot down the values of the generated 'Client
+After you've created the app, paste the values of the generated 'Client
 ID' (a 20-characters string) and 'Client Secret' (a 40-character string)
-fields. You'll need these two in the next step.
+into a text file, one per line. Example:
+```
+$ cat github_app.secrets
+ee07db3a7edbe4882f88
+2ae4f74f88069d71f854bff5b7173fee524b2ca3
+```
 
 ### 5. Configure your JupterHub
 
@@ -119,8 +130,7 @@ Having done the prep work above, run:
 ```
 ./configure --provider=do \
             --hub-fqdn=hub.alerts.wtf \
-            --github-oauth-client-id=<20-char-string-from-step-4> \
-            --github-oauth-secret=<40-char-string-from-step-4> \
+            --github-oauth-creds=github_app.secrets \
             --letsencrypt-email=kathryn.janeway@uw.edu
 ```
 

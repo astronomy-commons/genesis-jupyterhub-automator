@@ -204,14 +204,21 @@ gen_proxy_secret()
 
 gen_github_auth()
 {
-	if [[ -z $GITHUB_OAUTH_CLIENT_ID || -z $GITHUB_OAUTH_SECRET ]]; then
+	if [[ -z $GITHUB_OAUTH_CREDS ]]; then
 		if [[ -f "etc/secrets/github-auth.yaml" ]]; then
 			rm -f "etc/secrets/github-auth.yaml"
 			echo "disabling GitHub authentication (rerun with --github-oauth-client-id and --github-oauth-secret to re-enable)"
 		fi
 		return
 	fi
-	github_auth=1
+
+	# read the creds from the file
+	exec 3<"$GITHUB_OAUTH_CREDS"
+	IFS= read -r GITHUB_OAUTH_CLIENT_ID <&3
+	IFS= read -r GITHUB_OAUTH_SECRET <&3
+
+	# simple validation
+	[[ ${#GITHUB_OAUTH_CLIENT_ID} != 20 ]] && { errmsg "error: GitHub OAuth App Client ID (==$GITHUB_OAUTH_CLIENT_ID) from file $GITHUB_OAUTH_CREDS must be 20 chars long."; exit -1; }
 
 	GITHUB_OAUTH_CALLBACK="https://$HUB_FQDN/hub/oauth_callback"
 
@@ -386,7 +393,7 @@ show_summary() {
 	echo "    Each user will get ${USER_DISK}GiB of disk space"
 	echo "    Hub address will be https://$HUB_FQDN"
 	echo "      Let's Encrypt SSL cert will be registered to $LETSENCRYPT_EMAIL"
-if [[ -n $github_auth ]]; then
+if [[ -n $GITHUB_OAUTH_CREDS ]]; then
 	echo "    Authenticating via GitHub"
 if [[ -n $GITHUB_ORG ]]; then
 	echo "      Only users belonging to $GITHUB_ORG can log in."
