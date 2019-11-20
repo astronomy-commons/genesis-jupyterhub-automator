@@ -106,24 +106,27 @@ add_required()
 
 check_prerequisites()
 {
+	echo "== Checking prerequisites:"
+	echo
+
 	# see if we have doctl
-	hash doctl 2>/dev/null && echo "prereq: found doctl" || { errmsg "error: no doctl on path. Install Digital Ocean CLI tools."; exit -1; }
+	hash doctl 2>/dev/null && msg check "  found doctl" || { errmsg "  error: no doctl on path. Install Digital Ocean CLI tools."; exit -1; }
 
 	# see if we're authenticated
-	doctl compute droplet list >/dev/null 2>&1 && echo "prereq: logged into DO" || { errmsg "error: issues authenticating to Digital Ocean.."; exit -1; }
+	doctl compute droplet list >/dev/null 2>&1 && msg check "  logged into DO" || { errmsg "  error: issues authenticating to Digital Ocean.."; exit -1; }
 
 	# see if we have kubectl
-	hash kubectl 2>/dev/null && echo "prereq: found kubectl" || { errmsg "error: no kubectl on path. Install Kuberbetes CLI tools."; exit -1; }
+	hash kubectl 2>/dev/null && msg check "  found kubectl" || { errmsg "  error: no kubectl on path. Install Kuberbetes CLI tools."; exit -1; }
 
 	# see if we have helm
-	hash helm 2>/dev/null && echo "prereq: found helm" || { errmsg "error: no helm on path. Install Helm CLI tools."; exit -1; }
+	hash helm 2>/dev/null && msg check "  found helm" || { errmsg "  error: no helm on path. Install Helm CLI tools."; exit -1; }
 
 	# see if we have certbot
-	hash certbot 2>/dev/null && echo "prereq: found certbot" || { errmsg "error: no certbot on path. Install certbot tools."; exit -1; }
+	hash certbot 2>/dev/null && msg check "  found certbot" || { errmsg "  error: no certbot on path. Install certbot tools."; exit -1; }
 
 	# see if the domain has been properly set up
 	DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
-	doctl compute domain records list "$DOMAIN" >/dev/null 2>&1 && echo "prereq: DO is managing $DOMAIN" || { errmsg "error: domain not found. Please delegate '$DOMAIN' to DO's DNS service."; exit -1; }
+	doctl compute domain records list "$DOMAIN" >/dev/null 2>&1 && msg check "  DO is managing $DOMAIN" || { errmsg "  error: domain not found. Please delegate '$DOMAIN' to DO's DNS service."; exit -1; }
 
 	echo
 }
@@ -174,11 +177,20 @@ cp_with_subst()
 
 ############################
 
+msg()
+{
+	[[ "$1" == "done" ]] && symbol="👍"
+	[[ "$1" == "check" ]] && symbol="✅"
+	[[ "$1" == "skip" ]] && symbol="⏩"
+
+	echo "$symbol $2"
+}
+
 gen_proxy_secret()
 {
 	# don't regenerate if it already exists
 	if [[ -f etc/secrets/proxy.yaml ]]; then
-		echo "skipping etc/secrets/proxy.yaml; already exists."
+		msg skip "  skipping etc/secrets/proxy.yaml; already exists."
 		return
 	fi
 
@@ -187,7 +199,7 @@ gen_proxy_secret()
 	  secretToken: "$(openssl rand -hex 32)"
 	EOF
 	
-	echo "generated etc/secrets/proxy.yaml"
+	msg done "  generated etc/secrets/proxy.yaml"
 }
 
 gen_github_auth()
@@ -206,7 +218,7 @@ gen_github_auth()
 	# FIXME: this silently deletes any double quotes in the template file
 	cp_with_subst templates/helm/github-auth.yaml.sht etc/secrets/github-auth.yaml
 
-	echo "generated etc/secrets/github-auth.yaml"
+	msg done "  generated etc/secrets/github-auth.yaml"
 }
 
 gen_ssl()
@@ -221,7 +233,7 @@ gen_ssl()
 
 	# don't regenerate if it already exists
 	if [[ -f etc/secrets/ssl.yaml ]]; then
-		echo "skipping etc/secrets/ssl.yaml; already exists."
+		msg skip "  skipping etc/secrets/ssl.yaml; already exists."
 		return
 	fi
 
@@ -254,7 +266,7 @@ gen_ssl()
 	$(cat etc/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
 	EOF
 
-	echo "generated etc/secrets/ssl.yaml"
+	msg done "  generated etc/secrets/ssl.yaml"
 }
 
 doctl_size_list_json()
@@ -326,13 +338,33 @@ gen_config() {
 	storage_cost_per_user_per_day=$(printf %.2f $(echo "0.0015*$USER_DISK*24" | bc))
 
 	# progress report
-	echo "generated $CONFIG"
+	msg done "  generated $CONFIG"
+}
+
+gen_images()
+{
+	if [[ -n $HUB_IMAGE ]]; then
+		HUB_IMAGE_NAME=${HUB_IMAGE%%":"*}
+		HUB_IMAGE_TAG=${HUB_IMAGE##*":"}
+	fi
+
+	if [[ -n $JUPYTER_IMAGE ]]; then
+		JUPYTER_IMAGE_NAME=${JUPYTER_IMAGE%%":"*}
+		JUPYTER_IMAGE_TAG=${JUPYTER_IMAGE##*":"}
+	fi
+
+	if [[ -f etc/images ]]; then
+		msg skip "  skipping creation of etc/images; already exists."
+	else
+		cp -r images etc/
+		msg done "  generated etc/images"
+	fi
 }
 
 gen_values_yaml() {
 	# copy default values.yaml
 	cp_with_subst templates/helm/values.yaml.sht etc/values.yaml
-	echo "generated etc/values.yaml"
+	msg done "  generated etc/values.yaml"
 }
 
 show_summary() {
@@ -343,13 +375,15 @@ show_summary() {
 	echo ""
 	echo "  Cluster:"
 	echo "    ${NODES} nodes, ${NODE_CPU}vcpus and ${NODE_MEMORY}mib each ($SIZE instance type)."
-	echo "      note: 0.5vcpus and 0.5GiB of each node are reserved by the system."
+	echo "      note: ${OH_CPU}vcpus and ${OH_MEM}GiB of each node are reserved by the system."
 	echo "    Enough for ~$users simultaneous users (at ${USER_CPU}vcpus and ${USER_MEMORY}gib per user)"
 	echo "    Expected cost: "
 	echo "      Compute cluster: \$$cost_per_day/day"
 	echo "      User storage: \$$storage_cost_per_user_per_day/user/day"
 	echo ""
 	echo "  Environment:"
+	echo "    Each user is guaranteed ${USER_CPU}vcpus and ${USER_MEMORY}gib"
+	echo "    Each user will get ${USER_DISK}GiB of disk space"
 	echo "    Hub address will be https://$HUB_FQDN"
 	echo "      Let's Encrypt SSL cert will be registered to $LETSENCRYPT_EMAIL"
 if [[ -n $github_auth ]]; then
@@ -360,7 +394,15 @@ else
 	echo "      Any GitHub user can log in."
 fi
 fi
-	echo "    Each user will get ${USER_DISK}GiB of disk space"
+if [[ -n $HUB_IMAGE || -n $JUPYTER_IMAGE ]]; then
+	echo "    Images:"
+fi
+if [[ -n $HUB_IMAGE ]]; then
+	echo "      Hub: $HUB_IMAGE"
+fi
+if [[ -n $JUPYTER_IMAGE ]]; then
+	echo "      Jupyter: $JUPYTER_IMAGE"
+fi
 	echo ""
 	echo "========================================================================="
 	echo
@@ -436,12 +478,16 @@ test "$err" == "1" && { errmsg; errmsg "run $0 -h for help"; exit -1; }
 check_prerequisites
 
 # generate output files
+echo "== Generating configuration:"
+echo
 mkdir -p etc/secrets
 gen_config
-gen_values_yaml
 gen_proxy_secret
 gen_ssl
 gen_github_auth
+
+gen_images
+gen_values_yaml
 
 show_summary
 

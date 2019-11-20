@@ -20,6 +20,10 @@ JHUB_VERSION=0.9.0-alpha.1.028.00bc15c	# JupyterHub Helm chart version
 JHUB_HELM_RELEASE=genesis-jhub		# The name of the installed release
 JHUB_K8S_NAMESPACE=genesis		# The k8s namespace to install into
 
+# JupyterHub image configuration
+HUB_IMAGE=mjuric/k8s-hub-dirac:0.9.0-alpha.1.020.c70f016-mjuric1	# custom JupyterHub image (e.g. foo/hub:v0.3)
+JUPYTER_IMAGE=mjuric/genesis-notebook:0.1				# custom Jupyter Notebook image (e.g., foo/jupyter-notebook:v0.43)
+
 # JupyterHub fully qualified domain name
 HUB_FQDN=				# The domain name of the hub (REQUIRED)
 

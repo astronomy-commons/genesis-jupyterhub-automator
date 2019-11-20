@@ -1,4 +1,5 @@
-##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY
+##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY HUB_IMAGE_NAME HUB_IMAGE_TAG
+##vars JUPYTER_IMAGE_NAME JUPYTER_IMAGE_TAG
 jupyterhub:
   hub:
     extraConfig:
@@ -13,16 +14,16 @@ auth:			##if -n $ADMIN_USER
     users:		##if -n $ADMIN_USER
       - $ADMIN_USER	##if -n $ADMIN_USER
 hub:
-  image:
-    name: mjuric/k8s-hub-dirac
-    tag: 0.9.0-alpha.1.020.c70f016-mjuric1
+  image:					##if -n $HUB_IMAGE
+    name: $HUB_IMAGE_NAME			##if -n $HUB_IMAGE
+    tag: $HUB_IMAGE_TAG				##if -n $HUB_IMAGE
   extraConfig:
     myConfig: |
        c.JupyterHub.logo_file = '/usr/local/share/jupyter/hub/static/images/logo.png'
 singleuser:
-  image:
-    name: mjuric/genesis-notebook
-    tag: 0.1
+  image:					##if -n $JUPYTER_IMAGE
+    name: $JUPYTER_IMAGE_NAME			##if -n $JUPYTER_IMAGE
+    tag: $JUPYTER_IMAGE_TAG			##if -n $JUPYTER_IMAGE
   memory:
     guarantee: ${USER_MEMORY}G
   cpu:
