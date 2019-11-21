@@ -37,6 +37,12 @@ errmsg()
 	echo "$@" 1>&2
 }
 
+# Check if a docker image exists in the (public) repository
+docker_tag_exists()
+{
+    curl --silent -f -lSL https://hub.docker.com/v2/repositories/$1/tags/$2 > /dev/null 2>&1
+}
+
 # Parse a template files
 # args: $1 -- template filename
 parse_template()
@@ -353,11 +359,17 @@ gen_images()
 	if [[ -n $HUB_IMAGE ]]; then
 		HUB_IMAGE_NAME=${HUB_IMAGE%%":"*}
 		HUB_IMAGE_TAG=${HUB_IMAGE##*":"}
+		
+		docker_tag_exists $HUB_IMAGE_NAME $HUB_IMAGE_TAG || { errmsg "error: image $HUB_IMAGE doesn't exist in the Docker repository."; exit -1; }
+		msg check "  verified that $HUB_IMAGE is in the Docker repo."
 	fi
 
 	if [[ -n $JUPYTER_IMAGE ]]; then
 		JUPYTER_IMAGE_NAME=${JUPYTER_IMAGE%%":"*}
 		JUPYTER_IMAGE_TAG=${JUPYTER_IMAGE##*":"}
+
+		docker_tag_exists $JUPYTER_IMAGE_NAME $JUPYTER_IMAGE_TAG || { errmsg "error: image $JUPYTER_IMAGE doesn't exist in the Docker repository."; exit -1; }
+		msg check "  verified that $JUPYTER_IMAGE is in the Docker repo."
 	fi
 
 	if [[ -f etc/images ]]; then
@@ -389,8 +401,7 @@ show_summary() {
 	echo "      User storage: \$$storage_cost_per_user_per_day/user/day"
 	echo ""
 	echo "  Environment:"
-	echo "    Each user is guaranteed ${USER_CPU}vcpus and ${USER_MEMORY}gib"
-	echo "    Each user will get ${USER_DISK}GiB of disk space"
+	echo "    Each user is guaranteed ${USER_CPU}vcpus, ${USER_MEMORY}gib RAM, and ${USER_DISK}GiB of disk space"
 	echo "    Hub address will be https://$HUB_FQDN"
 	echo "      Let's Encrypt SSL cert will be registered to $LETSENCRYPT_EMAIL"
 if [[ -n $GITHUB_OAUTH_CREDS ]]; then
