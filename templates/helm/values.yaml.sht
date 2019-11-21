@@ -15,6 +15,7 @@ auth:			##if -n $ADMIN_USER
       - $ADMIN_USER	##if -n $ADMIN_USER
 hub:
   image:					##if -n $HUB_IMAGE
+    #automator: hub.image			##if -n $HUB_IMAGE
     name: $HUB_IMAGE_NAME			##if -n $HUB_IMAGE
     tag: $HUB_IMAGE_TAG				##if -n $HUB_IMAGE
   extraConfig:
@@ -22,6 +23,7 @@ hub:
        c.JupyterHub.logo_file = '/usr/local/share/jupyter/hub/static/images/logo.png'
 singleuser:
   image:					##if -n $JUPYTER_IMAGE
+    #automator: singleuser.image		##if -n $JUPYTER_IMAGE
     name: $JUPYTER_IMAGE_NAME			##if -n $JUPYTER_IMAGE
     tag: $JUPYTER_IMAGE_TAG			##if -n $JUPYTER_IMAGE
   memory:

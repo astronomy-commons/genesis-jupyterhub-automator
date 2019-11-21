@@ -51,10 +51,12 @@ parse_template()
 	do
 		# expected format:
 		# VAR=VALUE # DOCSTRING
+		# the VALUE is eval-ed, so any shell characters should be escaped
 		var=${line%=*}
 
 		val=${line#*=}
 		val=$(echo "${val%#*}" | sed 's/^[[:blank:]]*//;s/[[:blank:]]*$//' )
+		val=$(eval "echo \"$val\"")
 
 		cmt=$(echo "$line" | cut -s -d '#' -f 2- | sed 's/^[[:blank:]]*//;s/[[:blank:]]*$//')
 
@@ -112,6 +114,8 @@ add_required()
 
 check_prerequisites()
 {
+	[[ $NOCHECKS == 1 ]] && return
+
 	echo "== Checking prerequisites:"
 	echo
 
@@ -356,20 +360,29 @@ gen_config() {
 
 gen_images()
 {
+	# Pick up the latest image tags from images/
+	#[[     $HUB_IMAGE == "<latest>" ]] &&     HUB_IMAGE=$(cat images/hub/latest.tag)
+	#[[ $JUPYTER_IMAGE == "<latest>" ]] && JUPYTER_IMAGE=$(cat images/jupyter/latest.tag)
+
+	# Verify the images exist on dockerhub
 	if [[ -n $HUB_IMAGE ]]; then
 		HUB_IMAGE_NAME=${HUB_IMAGE%%":"*}
 		HUB_IMAGE_TAG=${HUB_IMAGE##*":"}
 		
-		docker_tag_exists $HUB_IMAGE_NAME $HUB_IMAGE_TAG || { errmsg "error: image $HUB_IMAGE doesn't exist in the Docker repository."; exit -1; }
-		msg check "  verified that $HUB_IMAGE is in the Docker repo."
+		if [[ -z $NOCHECKS ]]; then
+			docker_tag_exists $HUB_IMAGE_NAME $HUB_IMAGE_TAG || { errmsg "error: image $HUB_IMAGE doesn't exist in the Docker repository."; exit -1; }
+			msg check "  verified that $HUB_IMAGE is in the Docker repo."
+		fi
 	fi
 
 	if [[ -n $JUPYTER_IMAGE ]]; then
 		JUPYTER_IMAGE_NAME=${JUPYTER_IMAGE%%":"*}
 		JUPYTER_IMAGE_TAG=${JUPYTER_IMAGE##*":"}
 
-		docker_tag_exists $JUPYTER_IMAGE_NAME $JUPYTER_IMAGE_TAG || { errmsg "error: image $JUPYTER_IMAGE doesn't exist in the Docker repository."; exit -1; }
-		msg check "  verified that $JUPYTER_IMAGE is in the Docker repo."
+		if [[ -z $NOCHECKS ]]; then
+			docker_tag_exists $JUPYTER_IMAGE_NAME $JUPYTER_IMAGE_TAG || { errmsg "error: image $JUPYTER_IMAGE doesn't exist in the Docker repository."; exit -1; }
+			msg check "  verified that $JUPYTER_IMAGE is in the Docker repo."
+		fi
 	fi
 
 	if [[ -f etc/images ]]; then
@@ -443,6 +456,11 @@ do
 		
 		-f|--force)
 			FORCE=1
+			shift;
+		;;
+
+		--no-checks)
+			NOCHECKS=1
 			shift;
 		;;
 
