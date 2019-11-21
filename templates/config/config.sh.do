@@ -24,6 +24,9 @@ JHUB_K8S_NAMESPACE=genesis		# The k8s namespace to install into
 HUB_IMAGE=$(cat images/hub/latest.tag)		# custom JupyterHub image (e.g. foo/hub:v0.3)
 JUPYTER_IMAGE=$(cat images/jupyter/latest.tag)	# custom Jupyter Notebook image (e.g., foo/jupyter-notebook:v0.43)
 
+# Environment customization via script
+AUTOEXEC_SCRIPT=images/jupyter/autoexec.sh	# File with commands to run every time the user logs in
+
 # JupyterHub fully qualified domain name
 HUB_FQDN=				# The domain name of the hub (REQUIRED)
 

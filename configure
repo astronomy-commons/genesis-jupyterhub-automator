@@ -87,7 +87,7 @@ usage()
 			cmt="${s%%"|||"*}"; s=${s#*"|||"}
 			req="${s%%"|||"*}"; s=${s#*"|||"}
 
-			printf "    %-45s %s\n" "$(varname_to_option $var)=<$val>" "$cmt"
+			printf "    %-45s %s\n" "$(varname_to_option $var)=$val" "$cmt"
 
 #			echo "var=[[$var]] val=[[$val]] cmt=[[$cmt]]"
 		done < <(parse_template $TEMPLATE)
@@ -316,7 +316,9 @@ gen_config() {
 
 		echo "# $cmt"
 		# if this variable was overridden on the command line, replace the default value
-		if [[ ! -z "${!var}" ]]; then
+		setvar="SET_$var"
+		if [[ "${!setvar}" == "1" ]]; then
+#		if [[ ! -z "${!var}" ]]; then
 			val="${!var}"
 		else
 			# otherwise, make the default value available to subsequent generators
@@ -394,6 +396,11 @@ gen_images()
 }
 
 gen_values_yaml() {
+	# inject "autoexec.sh" if requested
+	if [[ -n $AUTOEXEC_SCRIPT ]]; then
+		AUTOEXEC_SCRIPT_CONTENTS="$(cat $AUTOEXEC_SCRIPT |  sed 's/^/            /')"
+	fi
+
 	# copy default values.yaml
 	cp_with_subst templates/helm/values.yaml.sht etc/values.yaml
 	msg done "  generated etc/values.yaml"
@@ -467,11 +474,13 @@ do
 		# Simple options with an argument
 		--*=*)
 			eval "$(option_to_varname $key)='${key#*=}'"
+			eval "SET_$(option_to_varname $key)=1"
 			shift;
 		;;
 
 		--*)
 			eval "$(option_to_varname $key)=$2"
+			eval "SET_$(option_to_varname $key)=1"
 			shift;
 			shift;
 		;;

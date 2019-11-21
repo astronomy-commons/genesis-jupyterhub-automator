@@ -1,1 +1,1 @@
-mjuric/jupyter:gallifrey.local-20191120221717
+mjuric/jupyter:gallifrey.local-20191120234535

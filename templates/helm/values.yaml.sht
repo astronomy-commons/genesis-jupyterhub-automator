@@ -1,5 +1,5 @@
 ##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY HUB_IMAGE_NAME HUB_IMAGE_TAG
-##vars JUPYTER_IMAGE_NAME JUPYTER_IMAGE_TAG
+##vars JUPYTER_IMAGE_NAME JUPYTER_IMAGE_TAG AUTOEXEC_SCRIPT_CONTENTS
 jupyterhub:
   hub:
     extraConfig:
@@ -32,14 +32,13 @@ singleuser:
     guarantee: $USER_CPU
   storage:
     capacity: ${USER_DISK}Gi
-  lifecycleHooks:
-    postStart:
-      exec:
-        command:
-          - "/bin/sh"
-          - "-c"
-          - |
-            rm -rf genesis-client .ipython/genesis
-            git clone https://github.com/dirac-institute/genesis-client
-            ln -s ../genesis-client/genesis .ipython/genesis
-            gitpuller https://github.com/dirac-institute/genesis-streaming-demo master genesis-streaming-demo
+  #automator: autoexec_begin
+  lifecycleHooks:				##if -n $AUTOEXEC_SCRIPT
+    postStart:					##if -n $AUTOEXEC_SCRIPT
+      exec:					##if -n $AUTOEXEC_SCRIPT
+        command:				##if -n $AUTOEXEC_SCRIPT
+          - "/bin/sh"				##if -n $AUTOEXEC_SCRIPT
+          - "-c"				##if -n $AUTOEXEC_SCRIPT
+          - |					##if -n $AUTOEXEC_SCRIPT
+$AUTOEXEC_SCRIPT_CONTENTS			##if -n $AUTOEXEC_SCRIPT
+  #automator: autoexec_end
