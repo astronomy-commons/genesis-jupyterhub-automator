@@ -1,0 +1,5 @@
+##vars NAME TAG
+singleuser:
+  image:
+    name: $NAME
+    tag: $TAG

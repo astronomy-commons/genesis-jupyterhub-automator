@@ -1,0 +1,46 @@
+#!/bin/bash
+#
+# Expand .sht templates.
+# usage: sht-expand helm/hub.image.yaml.sht HUB_IMAGE_NAME=foo HUB_IMAGE_TAG=bar
+#
+
+set -e
+
+# Locate the package base
+BASE="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )/.."
+
+# Load common functions
+. "$BASE/bin/_common.sh"
+
+usage() { echo "usage; $0 <template.sht> [VAR1=VALUE1 [VAR2=VALUE2 [...]]]" 1>&2; }
+
+[[ -z "$1" ]] && { usage; exit -1; }
+
+# Template
+SHT="$1"
+shift
+
+while [[ $# -gt 0 ]]
+do
+	key="$1"
+	case "$key" in
+		-h|--help)
+			usage
+			exit -1
+		;;
+		
+		# VAR=VALUE
+		*=*)
+			eval "$(option_to_varname $key)='${key#*=}'"
+			eval "SET_$(option_to_varname $key)=1"
+			shift;
+		;;
+
+		*)
+		errmsg "error: unknown argument $key."
+		exit -1
+		;;
+	esac
+done
+
+cp_with_subst "$SHT" /dev/stdout

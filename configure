@@ -10,32 +10,7 @@ CONFIG=etc/Makefile.config
 # Functions
 #############################################################################3
 
-# Extract command-line options
-option_to_varname()
-{
-	# takes an option such as --with-foo as an argument
-	# and returns the corresponding variable name (FOO)
-	key="${1%=*}"
-	key="${key#--}"
-	key="${key#with-}"
-	key="${key//-/_}"
-	echo "$key" | awk '{print toupper($0)}'
-}
-
-# Convert a variable name to equivalent option
-varname_to_option()
-{
-	opt="${1//_/-}"
-	opt=$(echo "$opt" | awk '{print tolower($0)}')
-	echo "--$opt"
-}
-
-
-# Output an error message
-errmsg()
-{
-	echo "$@" 1>&2
-}
+. bin/_common.sh
 
 # Check if a docker image exists in the (public) repository
 docker_tag_exists()
@@ -141,60 +116,7 @@ check_prerequisites()
 	echo
 }
 
-# cp_with_subst <source> <dest>
-# fill out the template written in our templating mini-language.
-# language rules:
-#   -- "##vars FOO BAR" defines FOO BAR as variables to expand
-#   -- "text txt ##if -n $GAGA" means the line will appear in output only if [[ -n $GAGA ]] evals to true
-#   -- "$FOO $BAZ" will expand $FOO (as it was define in ##vars but not $BAZ
-cp_with_subst()
-{
-	VARS=()
-	while IFS= read -r line
-	do
-		# check if this is the ##vars line
-		if [[ $line == \#\#vars* ]]; then
-			VARS+=(${line#"##vars "})
-			continue
-		fi
-	
-		# expected format:
-		# ...text.. ##if PREDICATE
-		TEXT="${line%"##if"*}"
-		PRED="${line#*"##if"}"
-		[[ "$TEXT" == "$line" ]] && PRED=
-
-		# conditional lines
-		if [[ ! -z $PRED ]]; then
-			if eval "[[ $PRED ]]"; then
-				line="$TEXT"
-			else
-				continue
-			fi
-		fi
-
-		# variable expansion
-		for VAR in "${VARS[@]}"; do
-			##echo "[[$line]] VAR=$VAR=${!VAR}" 1>&2
-			line=${line//"\${$VAR}"/"${!VAR}"} #" ## <-- work around a syntax highlighting bug in joe
-			line=${line//"\$$VAR"/"${!VAR}"}   #" ## <-- work around a syntax highlighting bug in joe
-		done
-
-		echo "$line"
-	done < "$1" > "$2"
-	##cat "$2"
-}
-
 ############################
-
-msg()
-{
-	[[ "$1" == "done" ]] && symbol="👍"
-	[[ "$1" == "check" ]] && symbol="✅"
-	[[ "$1" == "skip" ]] && symbol="⏩"
-
-	echo "$symbol $2"
-}
 
 gen_proxy_secret()
 {
@@ -387,11 +309,12 @@ gen_images()
 		fi
 	fi
 
+	# Copy their sources to etc/
 	if [[ -f etc/images ]]; then
 		msg skip "  skipping creation of etc/images; already exists."
 	else
 		cp -r images etc/
-		msg done "  generated etc/images"
+		msg done "  copied etc/images"
 	fi
 }
 
@@ -402,8 +325,8 @@ gen_values_yaml() {
 	fi
 
 	# copy default values.yaml
-	cp_with_subst templates/helm/values.yaml.sht etc/values.yaml
-	msg done "  generated etc/values.yaml"
+	cp_with_subst templates/helm/values.yaml.sht etc/values/values.yaml
+	msg done "  generated etc/values/values.yaml"
 }
 
 show_summary() {
@@ -414,8 +337,8 @@ show_summary() {
 	echo ""
 	echo "  Cluster:"
 	echo "    ${NODES} nodes, ${NODE_CPU}vcpus and ${NODE_MEMORY}mib each ($SIZE instance type)."
-	echo "      note: ${OH_CPU}vcpus and ${OH_MEM}GiB of each node are reserved by the system."
 	echo "    Enough for ~$users simultaneous users (at ${USER_CPU}vcpus and ${USER_MEMORY}gib per user)"
+	echo "      note: ${OH_CPU}vcpus and ${OH_MEM}GiB per node are reserved by the system."
 	echo "    Expected cost: "
 	echo "      Compute cluster: \$$cost_per_day/day"
 	echo "      User storage: \$$storage_cost_per_user_per_day/user/day"
@@ -526,6 +449,7 @@ check_prerequisites
 echo "== Generating configuration:"
 echo
 mkdir -p etc/secrets
+mkdir -p etc/values
 gen_config
 gen_proxy_secret
 gen_ssl
