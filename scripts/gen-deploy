@@ -1,22 +1,27 @@
 #!/bin/bash
 
 set -e
+
+# Switch to deployment directory and load the config
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "$DIR/.."
+cd "$(dirname $DIR)"
+. config
+. scripts/common.sh
+
+assert_defined JHUB_HELM_RELEASE JHUB_K8S_NAMESPACE JHUB_VERSION
 
 # Enumerate all config files
-VALUES=( $(ls etc/values/*.yaml 2>/dev/null) )
-VALUES+=( $(ls etc/images/*/*.yaml 2>/dev/null) )
+VALUES=( $(ls values/*.yaml 2>/dev/null) )
 
 # Enumerate all secrets
-SECRETS=( $(ls etc/secrets/*.yaml 2>/dev/null) )
+SECRETS=( $(ls secrets/*.yaml 2>/dev/null) )
 
 # Run Helm
-set -x
-helm upgrade --install $JHUB_HELM_RELEASE \
+helm upgrade $JHUB_HELM_RELEASE \
      jupyterhub/jupyterhub  \
      --namespace "$JHUB_K8S_NAMESPACE" \
      --version="$JHUB_VERSION" \
      ${VALUES[@]/#/--values } \
      ${SECRETS[@]/#/--values } \
-     --timeout=800
+     --timeout=800 \
+     "$@"

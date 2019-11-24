@@ -1,0 +1,25 @@
+#!/bin/bash
+#
+# Install Helm
+#
+
+set -e
+
+# Switch to deployment directory and load the config
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$(dirname $DIR)"
+. config
+. scripts/common.sh
+
+# Check if helm is installed (by looking for tiller)
+if kubectl get serviceAccounts --namespace kube-system | grep -qE '^tiller .*$'; then
+	echo "detected tiller; helm already installed. skipping."
+else
+	kubectl --namespace kube-system create serviceaccount tiller
+	kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+	helm init --service-account tiller --wait
+	kubectl patch deployment tiller-deploy --namespace=kube-system --type=json \
+		--patch='[{"op": "add", "path": "/spec/template/spec/containers/0/command", "value": ["/tiller", "--listen=localhost:44134"]}]'
+
+	echo "Helm installed and secured."
+fi

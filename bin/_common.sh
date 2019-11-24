@@ -72,8 +72,33 @@ cp_with_subst()
 		# variable expansion
 		for VAR in "${VARS[@]}"; do
 			##echo "[[$line]] VAR=$VAR=${!VAR}" 1>&2
-			line=${line//"\${$VAR}"/"${!VAR}"} #" ## <-- work around a syntax highlighting bug in joe
-			line=${line//"\$$VAR"/"${!VAR}"}   #" ## <-- work around a syntax highlighting bug in joe
+
+			# expand multi-line variables with | and indentation
+			# FIXME: this only works well if the variable is at the end of the line
+			if [[ ${!VAR} == *$'\n'* ]]; then
+				if [[ $line == *\$$VAR* ]]; then
+					pfix=${line%"\$$VAR"*}
+					match=1
+				elif [[ $line == *\$\{$VAR\}* ]]; then
+					pfix=${line%"\${$VAR}"*} #" <-- work around a syntax highlighting bug in joe
+					match=1
+				else
+					match=0
+				fi
+				if [[ $match == 1 ]]; then
+					index=$(( ${#pfix} ))
+					# now indent lines by the required amount
+					prefix=$(printf "%${index}s")
+					VAL="${!VAR}"
+					#VAL="$prefix"${VAL//$'\n'/$'\n'"$prefix"}
+					#line="$pfix|"$'\n'"$VAL"
+					VAL=${VAL//$'\n'/$'\n'"$prefix"}
+					line="$pfix""$VAL"
+				fi
+			else
+				line=${line//"\${$VAR}"/"${!VAR}"} #" ## <-- work around a syntax highlighting bug in joe
+				line=${line//"\$$VAR"/"${!VAR}"}   #" ## <-- work around a syntax highlighting bug in joe
+			fi
 		done
 
 		echo "$line"

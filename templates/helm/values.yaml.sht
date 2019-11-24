@@ -1,4 +1,4 @@
-##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY AUTOEXEC_SCRIPT_CONTENTS
+##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY
 jupyterhub:
   hub:
     extraConfig:
@@ -16,20 +16,9 @@ hub:
   extraConfig:
     myConfig: |
        c.JupyterHub.logo_file = '/usr/local/share/jupyter/hub/static/images/logo.png'
-singleuser:
   memory:
     guarantee: ${USER_MEMORY}G
   cpu:
     guarantee: $USER_CPU
   storage:
     capacity: ${USER_DISK}Gi
-  #automator: autoexec_begin
-  lifecycleHooks:				##if -n $AUTOEXEC_SCRIPT
-    postStart:					##if -n $AUTOEXEC_SCRIPT
-      exec:					##if -n $AUTOEXEC_SCRIPT
-        command:				##if -n $AUTOEXEC_SCRIPT
-          - "/bin/sh"				##if -n $AUTOEXEC_SCRIPT
-          - "-c"				##if -n $AUTOEXEC_SCRIPT
-          - |					##if -n $AUTOEXEC_SCRIPT
-$AUTOEXEC_SCRIPT_CONTENTS			##if -n $AUTOEXEC_SCRIPT
-  #automator: autoexec_end

@@ -31,10 +31,10 @@ follows in its default configuration:
 * The cluster consists of three 4-core, 8 GB RAM virtual machines. By
   default, we allocate one machine per user, and the users' sessions are shut 
   down after 1hr of inactivity (all of this can be customized).
-* Default software environment includes Python 2.7, 3, and R, with a suite
+* Default software environment includes Python 3, Julia, and R, with a suite
   of "usual" data science and astronomy software pre-installed (e.g.,
   astropy). There are options to customize it.
-* The hub will pull a repository of your own choice to any user's directory,
+* The hub can pull a repository of your own choice to any user's directory,
   suitable for distribution of demo materials.
 * The users authenticate with GitHub accounts, allowing either any GitHub user to log in, or just
   members of a particular organization(s).
@@ -72,6 +72,7 @@ brew install doctl
 brew install kubernetes-cli
 brew install kubernetes-helm
 brew install certbot
+brew install jq
 ```
 
 ### 2. Create or log into your Digital Ocean account
@@ -134,13 +135,14 @@ Having done the prep work above, run:
             --letsencrypt-email=kathryn.janeway@uw.edu
 ```
 
-This will generate configuration for you JupyterHub in `etc/`.
+This will generate configuration for you JupyterHub in `hub.alerts.wtf/`.
 
 ### 6. Deploy
 
 You're now ready to deploy it by running:
 
 ```
+cd hub.alerts.wtf
 make all
 ```
 
@@ -161,8 +163,9 @@ To destroy ***everything*** that was created (both JupyterHub and the Kubernetes
 cluster), run:
 
 ```
-make destroy
+./scripts/gen-destroy
 ```
+and answer 'yes' when asked to confirm.
 
 WARNING: This is irreversible!  All data residing in the deployment (e.g.,
 new or modified notebooks) will be lost.

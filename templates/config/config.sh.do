@@ -11,24 +11,26 @@ CLUSTER_NAME=genesis			# Kubernetes cluster name
 K8S_VERSION=1.15.5-do.1			# Kubernetes engine version
 SIZE=s-4vcpu-8gb			# Node type to use for the k8s cluster
 NODES=3					# Number of nodes in the k8s cluster
-NODE_POOL_NAME=\$(SIZE)			# Name of the k8s node pool
+NODE_POOL_NAME=\$SIZE			# Name of the k8s node pool
 REGION=sfo2				# DO region where to create the k8s cluster
-CONTEXT=do-\$(REGION)-\$(CLUSTER_NAME)	# Name of the k8s context for the cluster
+CONTEXT=do-\$REGION-\$CLUSTER_NAME	# Name of the k8s context for the cluster
+DASHBOARD_VERSION=v2.0.0-beta6		# The version of Kubernetes Dashboard to install
 
 # JupyterHub version to install, and kubernetes namespace to install it into
 JHUB_VERSION=0.9.0-alpha.1.028.00bc15c	# JupyterHub Helm chart version
-JHUB_HELM_RELEASE=genesis-jhub		# The name of the installed release
-JHUB_K8S_NAMESPACE=genesis		# The k8s namespace to install into
+JHUB_HELM_RELEASE=genesis-hub		# The name of the installed release
+JHUB_K8S_NAMESPACE=genesis-hub		# The k8s namespace to install into
 
 # JupyterHub image configuration
-HUB_IMAGE=$(cat images/hub/latest.tag)		# custom JupyterHub image (e.g. foo/hub:v0.3)
-JUPYTER_IMAGE=$(cat images/jupyter/latest.tag)	# custom Jupyter Notebook image (e.g., foo/jupyter-notebook:v0.43)
+HUB_IMAGE=mjuric/hub:gallifrey.local-20191123212324		# custom JupyterHub image (e.g. foo/hub:v0.3)
+JUPYTER_IMAGE=mjuric/jupyter:gallifrey.local-20191123212519	# custom Jupyter Notebook image (e.g., foo/jupyter-notebook:v0.43)
 
 # Environment customization via script
-AUTOEXEC_SCRIPT=images/jupyter/autoexec.sh	# File with commands to run every time the user logs in
+AUTOEXEC_SCRIPT=			# File with commands to run every time the user logs in
 
 # JupyterHub fully qualified domain name
 HUB_FQDN=				# The domain name of the hub (REQUIRED)
+PREFIX=\$HUB_FQDN			# Output directory for the generated configuration
 
 # Let's Encrypt SSL cerfiticates information
 LETSENCRYPT_EMAIL=			# E-mail for Let's Encrypt (REQUIRED)

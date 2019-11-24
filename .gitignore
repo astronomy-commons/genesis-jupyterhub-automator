@@ -3,3 +3,4 @@ secrets/*.yaml
 *~
 *.cache.json
 images/*/*.yaml
+DEADJOE

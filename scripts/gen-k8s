@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# Create a Kubernetes Cluster based on the available config
+#
+
+set -e
+
+# Switch to deployment directory and load the config
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$(dirname $DIR)"
+. config
+. scripts/common.sh
+
+assert_defined CLUSTER_NAME REGION NODE_POOL_NAME SIZE NODES K8S_VERSION CONTEXT
+
+# Check if this cluster already exists; do nothing if it does
+if doctl k8s cluster list --format Name --no-header | grep -qE '^'"$CLUSTER_NAME"'$'; then
+	echo "cluster $CLUSTER_NAME already exists; will not attepmt to re-create" 1>&2
+else
+	# Create the cluster
+	doctl k8s cluster create $CLUSTER_NAME --region $REGION --node-pool="name=$NODE_POOL_NAME;size=$SIZE;count=$NODES" --version="$K8S_VERSION"
+fi
+
+# Switch kubectl context to the newly created cluster
+if [[ $(kubectl config current-context) != "$CONTEXT" ]]; then
+	kubectl config use-context $CONTEXT
+else
+	echo "kubectl context already set to $CLUSTER_NAME; leaving unchanged."
+fi

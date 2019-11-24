@@ -1,0 +1,10 @@
+##vars AUTOEXEC_SCRIPT_CONTENTS
+singleuser:
+  lifecycleHooks:
+    postStart:
+      exec:
+        command:
+          - "/bin/sh"
+          - "-c"
+          - |
+            $AUTOEXEC_SCRIPT_CONTENTS

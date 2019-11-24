@@ -4,7 +4,6 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
 TEMPLATES=($(ls templates/config/config.sh.* | grep -v '.*~'))
-CONFIG=etc/Makefile.config
 
 #############################################################################3
 # Functions
@@ -94,6 +93,9 @@ check_prerequisites()
 	echo "== Checking prerequisites:"
 	echo
 
+	# see if we have jq
+	hash jq 2>/dev/null && msg check "  found jq" || { errmsg "  error: no jq on path. Install jq."; exit -1; }
+
 	# see if we have doctl
 	hash doctl 2>/dev/null && msg check "  found doctl" || { errmsg "  error: no doctl on path. Install Digital Ocean CLI tools."; exit -1; }
 
@@ -121,24 +123,24 @@ check_prerequisites()
 gen_proxy_secret()
 {
 	# don't regenerate if it already exists
-	if [[ -f etc/secrets/proxy.yaml ]]; then
-		msg skip "  skipping etc/secrets/proxy.yaml; already exists."
+	if [[ -f $PREFIX/secrets/proxy.yaml ]]; then
+		msg skip "  skipping $PREFIX/secrets/proxy.yaml; already exists."
 		return
 	fi
 
-	cat > etc/secrets/proxy.yaml <<-EOF
+	cat > $PREFIX/secrets/proxy.yaml <<-EOF
 	proxy:
 	  secretToken: "$(openssl rand -hex 32)"
 	EOF
 	
-	msg done "  generated etc/secrets/proxy.yaml"
+	msg done "  generated $PREFIX/secrets/proxy.yaml"
 }
 
 gen_github_auth()
 {
 	if [[ -z $GITHUB_OAUTH_CREDS ]]; then
-		if [[ -f "etc/secrets/github-auth.yaml" ]]; then
-			rm -f "etc/secrets/github-auth.yaml"
+		if [[ -f "$PREFIX/secrets/github-auth.yaml" ]]; then
+			rm -f "$PREFIX/secrets/github-auth.yaml"
 			echo "disabling GitHub authentication (rerun with --github-oauth-client-id and --github-oauth-secret to re-enable)"
 		fi
 		return
@@ -155,24 +157,24 @@ gen_github_auth()
 	GITHUB_OAUTH_CALLBACK="https://$HUB_FQDN/hub/oauth_callback"
 
 	# FIXME: this silently deletes any double quotes in the template file
-	cp_with_subst templates/helm/github-auth.yaml.sht etc/secrets/github-auth.yaml
+	cp_with_subst templates/helm/github-auth.yaml.sht $PREFIX/secrets/github-auth.yaml
 
-	msg done "  generated etc/secrets/github-auth.yaml"
+	msg done "  generated $PREFIX/secrets/github-auth.yaml [creds from $GITHUB_OAUTH_CREDS]"
 }
 
 gen_ssl()
 {
 	if [[ -z $LETSENCRYPT_EMAIL ]]; then
-		if [[ -f "etc/secrets/ssl.yaml" ]]; then
-			rm -f "etc/secrets/ssl.yaml"
+		if [[ -f "$PREFIX/secrets/ssl.yaml" ]]; then
+			rm -f "$PREFIX/secrets/ssl.yaml"
 			echo "disabling SSL (rerun with --letsencrypt-email=owner-email@example.com to re-enable)"
 		fi
 		return
 	fi
 
 	# don't regenerate if it already exists
-	if [[ -f etc/secrets/ssl.yaml ]]; then
-		msg skip "  skipping etc/secrets/ssl.yaml; already exists."
+	if [[ -f $PREFIX/secrets/ssl.yaml ]]; then
+		msg skip "  skipping $PREFIX/secrets/ssl.yaml; already exists."
 		return
 	fi
 
@@ -180,7 +182,7 @@ gen_ssl()
 	OUTPUT=$(certbot -d "$HUB_FQDN" \
 		--keep --manual \
 		--preferred-challenges dns certonly \
-		--config-dir etc/secrets/certbot/config --work-dir etc/secrets/certbot/work --logs-dir etc/secrets/certbot/logs \
+		--config-dir $PREFIX/secrets/certbot/config --work-dir $PREFIX/secrets/certbot/work --logs-dir $PREFIX/secrets/certbot/logs \
 		-m "$LETSENCRYPT_EMAIL" \
 		--agree-tos --no-eff-email --manual-public-ip-logging-ok \
 		--manual-auth-hook=bin/certbot-auth.sh 2>&1)
@@ -192,7 +194,7 @@ gen_ssl()
 		exit -1
 	fi
 
-	cat > etc/secrets/ssl.yaml <<-EOF
+	cat > $PREFIX/secrets/ssl.yaml <<-EOF
 	proxy:
 	  https:
 	    hosts:
@@ -200,12 +202,21 @@ gen_ssl()
 	    type: manual
 	    manual:
 	      key: |
-	$(cat etc/secrets/certbot/config/live/$HUB_FQDN/privkey.pem |  sed 's/^/        /')
+	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/privkey.pem |  sed 's/^/        /')
 	      cert: |
-	$(cat etc/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
+	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
 	EOF
 
-	msg done "  generated etc/secrets/ssl.yaml"
+	msg done "  generated $PREFIX/secrets/ssl.yaml"
+}
+
+gen_dashboard()
+{
+	mkdir -p $PREFIX/dashboard
+	cp templates/helm/create-dashboard-admin-user.yaml $PREFIX/dashboard
+	curl -s "https://raw.githubusercontent.com/kubernetes/dashboard/$DASHBOARD_VERSION/aio/deploy/recommended.yaml" -o $PREFIX/dashboard/dashboard.yaml
+	
+	msg done "  generated $PREFIX/dashboard [version $DASHBOARD_VERSION]"
 }
 
 doctl_size_list_json()
@@ -227,8 +238,7 @@ gen_config() {
 	#fi
 
 	# generate the include file with configuration
-	mkdir -p "$(dirname $CONFIG)"
-	#eval "echo \"$(<$TEMPLATE)\"" > "$CONFIG"
+	TMPCONFIG=$(mktemp -t genesis-config-XXXXX)
 	while IFS= read -r s
 	do
 		var="${s%%"|||"*}"; s=${s#*"|||"}
@@ -240,7 +250,6 @@ gen_config() {
 		# if this variable was overridden on the command line, replace the default value
 		setvar="SET_$var"
 		if [[ "${!setvar}" == "1" ]]; then
-#		if [[ ! -z "${!var}" ]]; then
 			val="${!var}"
 		else
 			# otherwise, make the default value available to subsequent generators
@@ -249,9 +258,17 @@ gen_config() {
 		echo "$var=$val"
 		echo "export $var"
 		echo
-	done < <(parse_template $TEMPLATE) > "$CONFIG"
+	done < <(parse_template $TEMPLATE) > "$TMPCONFIG"
 
-	# validation
+	# Source the generated config, to eval any variables
+	. "$TMPCONFIG"
+
+	# Make sure that PREFIX is valid
+	[[ -n "$PREFIX" ]] || { errmsg "error: --prefix is not set. aborting"; exit -1; }
+
+
+
+	# early validation
 	NODEPROPS=( $(doctl_size_list_json | jq -r '.[] | select(.slug == "'"$SIZE"'") | [.vcpus, .memory, .price_hourly] | @tsv ') )
 	NODE_CPU=${NODEPROPS[0]}
 	NODE_MEMORY=${NODEPROPS[1]}
@@ -278,16 +295,34 @@ gen_config() {
 	cost_per_day=$(printf %.2f $(echo "$NODE_PRICE*$NODES*24" | bc))
 	storage_cost_per_user_per_day=$(printf %.2f $(echo "0.0015*$USER_DISK*24" | bc))
 
+
+
+	# Generate output directory skeleton
+	mkdir -p "$PREFIX"/{secrets,values}
+	msg done "  created output directory $PREFIX"
+	
+	if [[ -n $DEV_MODE ]]; then
+		rm -f "$PREFIX/scripts" "$PREFIX/Makefile"
+		ln -s "$PWD/scripts" "$PREFIX/"
+		ln -s "$PWD/Makefile" "$PREFIX/"
+		msg done "  [dev-mode] Linking 'scripts' to $PREFIX/scripts"
+	else
+		cp -a scripts "$PREFIX/"
+		cp -a Makefile "$PREFIX/"
+		msg done "  copied scripts to $PREFIX/scripts"
+	fi
+
+	# move config file
+	CONFIG="$PREFIX/config"
+	mv "$TMPCONFIG" "$CONFIG"
+
+
 	# progress report
 	msg done "  generated $CONFIG"
 }
 
 gen_images()
 {
-	# Pick up the latest image tags from images/
-	#[[     $HUB_IMAGE == "<latest>" ]] &&     HUB_IMAGE=$(cat images/hub/latest.tag)
-	#[[ $JUPYTER_IMAGE == "<latest>" ]] && JUPYTER_IMAGE=$(cat images/jupyter/latest.tag)
-
 	# Verify the images exist on dockerhub
 	if [[ -n $HUB_IMAGE ]]; then
 		HUB_IMAGE_NAME=${HUB_IMAGE%%":"*}
@@ -297,6 +332,9 @@ gen_images()
 			docker_tag_exists $HUB_IMAGE_NAME $HUB_IMAGE_TAG || { errmsg "error: image $HUB_IMAGE doesn't exist in the Docker repository."; exit -1; }
 			msg check "  verified that $HUB_IMAGE is in the Docker repo."
 		fi
+
+		NAME="$HUB_IMAGE_NAME" TAG="$HUB_IMAGE_TAG" cp_with_subst templates/helm/hub.image.yaml.sht $PREFIX/values/hub.image.yaml
+		msg done "  generated $PREFIX/values/hub.image.yaml.sht [image is $HUB_IMAGE]"
 	fi
 
 	if [[ -n $JUPYTER_IMAGE ]]; then
@@ -307,26 +345,28 @@ gen_images()
 			docker_tag_exists $JUPYTER_IMAGE_NAME $JUPYTER_IMAGE_TAG || { errmsg "error: image $JUPYTER_IMAGE doesn't exist in the Docker repository."; exit -1; }
 			msg check "  verified that $JUPYTER_IMAGE is in the Docker repo."
 		fi
-	fi
 
-	# Copy their sources to etc/
-	if [[ -f etc/images ]]; then
-		msg skip "  skipping creation of etc/images; already exists."
-	else
-		cp -r images etc/
-		msg done "  copied etc/images"
+		NAME="$JUPYTER_IMAGE_NAME" TAG="$JUPYTER_IMAGE_TAG" cp_with_subst templates/helm/singleuser.image.yaml.sht $PREFIX/values/singleuser.image.yaml
+		msg done "  generated $PREFIX/values/singleuser.image.yaml.sht [image is $JUPYTER_IMAGE]"
 	fi
 }
 
-gen_values_yaml() {
+gen_autoexec()
+{
 	# inject "autoexec.sh" if requested
 	if [[ -n $AUTOEXEC_SCRIPT ]]; then
-		AUTOEXEC_SCRIPT_CONTENTS="$(cat $AUTOEXEC_SCRIPT |  sed 's/^/            /')"
+		AUTOEXEC_SCRIPT_CONTENTS="$(cat $AUTOEXEC_SCRIPT)"
 	fi
 
+	cp_with_subst templates/helm/autoexec.yaml.sht $PREFIX/values/autoexec.yaml
+	msg done "  generated $PREFIX/values/autoexec.yaml [from $AUTOEXEC_SCRIPT]"
+}
+
+gen_values_yaml() {
+
 	# copy default values.yaml
-	cp_with_subst templates/helm/values.yaml.sht etc/values/values.yaml
-	msg done "  generated etc/values/values.yaml"
+	cp_with_subst templates/helm/values.yaml.sht $PREFIX/values/values.yaml
+	msg done "  generated $PREFIX/values/values.yaml"
 }
 
 show_summary() {
@@ -394,6 +434,11 @@ do
 			shift;
 		;;
 
+		--dev-mode)
+			DEV_MODE=1
+			shift;
+		;;
+
 		# Simple options with an argument
 		--*=*)
 			eval "$(option_to_varname $key)='${key#*=}'"
@@ -448,14 +493,16 @@ check_prerequisites
 # generate output files
 echo "== Generating configuration:"
 echo
-mkdir -p etc/secrets
-mkdir -p etc/values
+
 gen_config
+
+gen_dashboard
 gen_proxy_secret
 gen_ssl
 gen_github_auth
 
 gen_images
+gen_autoexec
 gen_values_yaml
 
 show_summary

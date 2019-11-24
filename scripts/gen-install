@@ -1,0 +1,33 @@
+#!/bin/bash
+#
+# Install JupyterHub, add proxy to the DNS
+#
+
+set -e
+
+# Switch to deployment directory and load the config
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$(dirname $DIR)"
+. config
+. scripts/common.sh
+
+assert_defined JHUB_K8S_NAMESPACE JHUB_HELM_RELEASE
+
+# Set up the Helm repository
+if [[ $(helm repo list -o json | jq -r ' .[] | select(.Name == "jupyterhub") | .URL') != "https://jupyterhub.github.io/helm-chart/" ]]; then
+	helm repo add jupyterhub https://jupyterhub.github.io/helm-chart/
+	helm repo update
+	echo "added the jupyterhub Helm repository"
+fi
+
+# Deploy JupyterHub, if not already there
+ISRUNNING=$(helm list --namespace $JHUB_K8S_NAMESPACE --output json | jq -r '.Releases | .[] | select(.Name == "'"$JHUB_K8S_NAMESPACE"'") | .Name')
+if [[ -z "$ISRUNNING" ]]; then
+	./scripts/gen-deploy --install
+else
+	echo "JupyterHub already deployed (namespace $JHUB_K8S_NAMESPACE, release $JHUB_HELM_RELEASE). Redeploying."
+	./scripts/gen-deploy
+fi
+
+# Add to DNS (if needed)
+./scripts/gen-dns-sync

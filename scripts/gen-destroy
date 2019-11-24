@@ -1,0 +1,37 @@
+#!/bin/bash
+#
+# Create a Kubernetes Cluster based on the available config
+#
+
+set -e
+
+# Switch to deployment directory and load the config
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$(dirname $DIR)"
+. config
+. scripts/common.sh
+
+assert_defined JHUB_HELM_RELEASE JHUB_K8S_NAMESPACE CLUSTER_NAME
+
+echo "===== *** WARNING *** WARNING *** WARNING *** ====="
+echo 
+echo "  This will *IRREVERSABLY* destroy:"
+echo "    - JupyterHub deployment $JHUB_HELM_RELEASE"
+echo "    - Kubernetes cluster $CLUSTER_NAME"
+echo ""
+echo "===== *** WARNING *** WARNING *** WARNING *** ====="
+
+read -p 'Are you sure (yes/no): ' yn
+if [[ $yn != "yes" ]]; then
+	echo "Didn't answer with 'yes'. Aborting."
+	exit -1
+fi
+
+# Delete JupyterHub release
+helm delete "$JHUB_HELM_RELEASE" --purge
+
+# Delete the namespace
+kubectl delete namespace "$JHUB_K8S_NAMESPACE" --wait=true
+
+# Delete the whole cluster
+doctl k8s cluster delete "$CLUSTER_NAME" -f

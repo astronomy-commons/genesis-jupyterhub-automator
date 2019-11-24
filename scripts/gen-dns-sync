@@ -1,21 +1,41 @@
 #!/bin/bash
+#
+# Install JupyterHub, add proxy to the DNS
+#
 
 set -e
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "$DIR/.."
 
+# Switch to deployment directory and load the config
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$(dirname $DIR)"
+. config
+. scripts/common.sh
+
+assert_defined HUB_FQDN JHUB_K8S_NAMESPACE
+
+# host and the domain
 HOST=$(echo $HUB_FQDN | cut -d . -f 1)
 DOMAIN=$(echo $HUB_FQDN | cut -d . -f 2-)
 
 # Find our external IP. This may take a few minutes
 HUBIP=
+hdr=
 while [[ -z "$HUBIP" ]]; do
 	HUBIP=$(kubectl --namespace="$JHUB_K8S_NAMESPACE" get svc proxy-public --output jsonpath='{.status.loadBalancer.ingress[0].ip}')
+	[[ -n "$HUBIP" ]] && break
+
+	if [[ -z $hdr ]]; then
+		echo -n "Awaiting assignment of proxy IP (may take 2-3 minutes)... "
+		hdr=1
+	else
+		echo -n "."
+	fi
 	sleep 1
 done
+[[ $hdr == 1 ]] && echo " done."
 
 # See if we already have the correct entry, skip if so
-CURIP=$(doctl compute domain records list alerts.wtf -o json | jq -r ".[] | select( .name == \"hub\") | .data")
+CURIP=$(doctl compute domain records list $DOMAIN -o json | jq -r ".[] | select( .name == \"$HOST\") | .data")
 if [[ "$CURIP" == "$HUBIP" ]]; then
 	echo "DNS for $HUB_FQDN already points to the correct IP ($CURIP)."
 	exit
