@@ -28,6 +28,3 @@ else
 	echo "JupyterHub already deployed (namespace $JHUB_K8S_NAMESPACE, release $JHUB_HELM_RELEASE). Redeploying."
 	./scripts/gen-deploy
 fi
-
-# Add to DNS (if needed)
-./scripts/gen-dns-sync

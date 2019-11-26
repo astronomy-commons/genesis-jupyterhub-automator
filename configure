@@ -86,6 +86,19 @@ add_required()
 	done < <(parse_template $1)
 }
 
+check_do_prerequisites()
+{
+	# see if we have doctl
+	hash doctl 2>/dev/null && msg check "  found doctl" || { errmsg "  error: no doctl on path. Install Digital Ocean CLI tools."; exit -1; }
+
+	# see if we're authenticated
+	doctl compute droplet list >/dev/null 2>&1 && msg check "  logged into DO" || { errmsg "  error: issues authenticating to Digital Ocean.."; exit -1; }
+
+	# see if the domain has been properly set up
+	DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
+	doctl compute domain records list "$DOMAIN" >/dev/null 2>&1 && msg check "  DO is managing $DOMAIN" || { errmsg "  error: domain not found. Please delegate '$DOMAIN' to DO's DNS service."; exit -1; }
+}
+
 check_prerequisites()
 {
 	[[ $NOCHECKS == 1 ]] && return
@@ -96,12 +109,6 @@ check_prerequisites()
 	# see if we have jq
 	hash jq 2>/dev/null && msg check "  found jq" || { errmsg "  error: no jq on path. Install jq."; exit -1; }
 
-	# see if we have doctl
-	hash doctl 2>/dev/null && msg check "  found doctl" || { errmsg "  error: no doctl on path. Install Digital Ocean CLI tools."; exit -1; }
-
-	# see if we're authenticated
-	doctl compute droplet list >/dev/null 2>&1 && msg check "  logged into DO" || { errmsg "  error: issues authenticating to Digital Ocean.."; exit -1; }
-
 	# see if we have kubectl
 	hash kubectl 2>/dev/null && msg check "  found kubectl" || { errmsg "  error: no kubectl on path. Install Kuberbetes CLI tools."; exit -1; }
 
@@ -111,9 +118,7 @@ check_prerequisites()
 	# see if we have certbot
 	hash certbot 2>/dev/null && msg check "  found certbot" || { errmsg "  error: no certbot on path. Install certbot tools."; exit -1; }
 
-	# see if the domain has been properly set up
-	DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
-	doctl compute domain records list "$DOMAIN" >/dev/null 2>&1 && msg check "  DO is managing $DOMAIN" || { errmsg "  error: domain not found. Please delegate '$DOMAIN' to DO's DNS service."; exit -1; }
+	[[ $PROVIDER == do ]] && check_do_prerequisites
 
 	echo
 }
