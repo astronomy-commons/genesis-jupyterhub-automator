@@ -1,12 +1,7 @@
 ##vars ADMIN_USER USER_DISK USER_CPU USER_MEMORY
-jupyterhub:
-  hub:
-    extraConfig:
-      timeout: |
-        c.Spawner.http_timeout = 600
-  cull:
-    enabled: true
-    timeout: 3600
+cull:
+  enabled: true
+  timeout: 3600
 auth:			##if -n $ADMIN_USER
   admin:		##if -n $ADMIN_USER
     access: true	##if -n $ADMIN_USER
@@ -14,8 +9,8 @@ auth:			##if -n $ADMIN_USER
       - $ADMIN_USER	##if -n $ADMIN_USER
 hub:
   extraConfig:
-    myConfig: |
-       c.JupyterHub.logo_file = '/usr/local/share/jupyter/hub/static/images/logo.png'
+    timeout: |
+      c.Spawner.http_timeout = 600
   memory:
     guarantee: ${USER_MEMORY}G
   cpu:

@@ -22,8 +22,8 @@ JHUB_HELM_RELEASE=genesis-hub		# The name of the installed release
 JHUB_K8S_NAMESPACE=genesis-hub		# The k8s namespace to install into
 
 # JupyterHub image configuration
-HUB_IMAGE=mjuric/hub:gallifrey.local-20191123212324		# custom JupyterHub image (e.g. foo/hub:v0.3)
-JUPYTER_IMAGE=mjuric/jupyter:gallifrey.local-20191123212519	# custom Jupyter Notebook image (e.g., foo/jupyter-notebook:v0.43)
+HUB_IMAGE=mjuric/hub:gallifrey.local-20191125172436		# custom JupyterHub image (e.g. foo/hub:v0.3)
+JUPYTER_IMAGE=mjuric/jupyter:gallifrey.local-20191125235836	# custom Jupyter Notebook image (e.g., foo/jupyter-notebook:v0.43)
 
 # Environment customization via script
 AUTOEXEC_SCRIPT=			# File with commands to run every time the user logs in
