@@ -304,11 +304,11 @@ gen_config() {
 	if [[ -n $DEV_MODE ]]; then
 		rm -f "$PREFIX/scripts" "$PREFIX/Makefile"
 		ln -s "$PWD/scripts" "$PREFIX/"
-		ln -s "$PWD/Makefile" "$PREFIX/"
+		ln -s "$PWD/scripts/Makefile" "$PREFIX/"
 		msg done "  [dev-mode] Linking 'scripts' to $PREFIX/scripts"
 	else
 		cp -a scripts "$PREFIX/"
-		cp -a Makefile "$PREFIX/"
+		cp -a scripts/Makefile "$PREFIX/"
 		msg done "  copied scripts to $PREFIX/scripts"
 	fi
 
