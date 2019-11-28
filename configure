@@ -340,6 +340,8 @@ gen_images()
 
 		NAME="$HUB_IMAGE_NAME" TAG="$HUB_IMAGE_TAG" cp_with_subst templates/helm/hub.image.yaml.sht $PREFIX/values/hub.image.yaml
 		msg done "  generated $PREFIX/values/hub.image.yaml.sht [image is $HUB_IMAGE]"
+	else
+		rm -f "$PREFIX/values/hub.image.yaml"
 	fi
 
 	if [[ -n $JUPYTER_IMAGE ]]; then
@@ -353,6 +355,8 @@ gen_images()
 
 		NAME="$JUPYTER_IMAGE_NAME" TAG="$JUPYTER_IMAGE_TAG" cp_with_subst templates/helm/singleuser.image.yaml.sht $PREFIX/values/singleuser.image.yaml
 		msg done "  generated $PREFIX/values/singleuser.image.yaml.sht [image is $JUPYTER_IMAGE]"
+	else
+		rm -f "$PREFIX/values/singleuser.image.yaml"
 	fi
 }
 
@@ -361,10 +365,12 @@ gen_autoexec()
 	# inject "autoexec.sh" if requested
 	if [[ -n $AUTOEXEC_SCRIPT ]]; then
 		AUTOEXEC_SCRIPT_CONTENTS="$(cat $AUTOEXEC_SCRIPT)"
-	fi
 
-	cp_with_subst templates/helm/autoexec.yaml.sht $PREFIX/values/autoexec.yaml
-	msg done "  generated $PREFIX/values/autoexec.yaml [from $AUTOEXEC_SCRIPT]"
+		cp_with_subst templates/helm/autoexec.yaml.sht $PREFIX/values/autoexec.yaml
+		msg done "  generated $PREFIX/values/autoexec.yaml [from $AUTOEXEC_SCRIPT]"
+	else
+		rm -f "$PREFIX/values/autoexec.yaml"
+	fi
 }
 
 gen_values_yaml() {
@@ -387,6 +393,7 @@ show_summary() {
 	echo "    Expected cost: "
 	echo "      Compute cluster: \$$cost_per_day/day"
 	echo "      User storage: \$$storage_cost_per_user_per_day/user/day"
+	echo "    Kubernetes version: $K8S_VERSION"
 	echo ""
 	echo "  Environment:"
 	echo "    Each user is guaranteed ${USER_CPU}vcpus, ${USER_MEMORY}gib RAM, and ${USER_DISK}GiB of disk space"
@@ -409,6 +416,7 @@ fi
 if [[ -n $JUPYTER_IMAGE ]]; then
 	echo "      Jupyter: $JUPYTER_IMAGE"
 fi
+	echo "    Helm Chart: $JHUB_VERSION"
 	echo ""
 	echo "========================================================================="
 	echo
