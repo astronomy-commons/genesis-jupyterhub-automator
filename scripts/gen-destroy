@@ -34,4 +34,11 @@ helm delete "$JHUB_HELM_RELEASE" --purge
 kubectl delete namespace "$JHUB_K8S_NAMESPACE" --wait=true
 
 # Delete the whole cluster
-doctl k8s cluster delete "$CLUSTER_NAME" -f
+if [[ $PROVIDER == do ]]; then
+	doctl k8s cluster delete "$CLUSTER_NAME" -f
+elif [[ $PROVIDER == aws ]]; then
+	eksctl delete cluster -f eksctl/cluster.yaml
+else
+	echo "$PROVIDER not supported in gen-destroy"
+	exit -1
+fi

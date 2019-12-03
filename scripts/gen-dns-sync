@@ -21,7 +21,10 @@ DOMAIN=$(echo $HUB_FQDN | cut -d . -f 2-)
 HUBIP=
 hdr=
 while [[ -z "$HUBIP" ]]; do
+	# load balancer may provision an ip or a DNS name
+	# alternate between checking for an ip field vs hostname
 	HUBIP=$(kubectl --namespace="$JHUB_K8S_NAMESPACE" get svc proxy-public --output jsonpath='{.status.loadBalancer.ingress[0].ip}')
+	[[ -n "$HUBIP" ]] || HUBIP=$(kubectl --namespace="$JHUB_K8S_NAMESPACE" get svc proxy-public --output jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 	[[ -n "$HUBIP" ]] && break
 
 	if [[ -z $hdr ]]; then
@@ -34,18 +37,96 @@ while [[ -z "$HUBIP" ]]; do
 done
 [[ $hdr == 1 ]] && echo " done."
 
-# See if we already have the correct entry, skip if so
-CURIP=$(doctl compute domain records list $DOMAIN -o json | jq -r ".[] | select( .name == \"$HOST\") | .data")
-if [[ "$CURIP" == "$HUBIP" ]]; then
-	echo "DNS for $HUB_FQDN already points to the correct IP ($CURIP)."
-	exit
+if [[ $PROVIDER == do ]]; then
+	# See if we already have the correct entry, skip if so
+	CURIP=$(doctl compute domain records list $DOMAIN -o json | jq -r ".[] | select( .name == \"$HOST\") | .data")
+	if [[ "$CURIP" == "$HUBIP" ]]; then
+		echo "DNS for $HUB_FQDN already points to the correct IP ($CURIP)."
+		exit
+	fi
+
+	# Delete any old DNS entries
+	DNS_RECORD_IDS=$(doctl compute domain records list $DOMAIN -o json | jq ".[] | select( .name == \"$HOST\") | .id ")
+	for ID in $DNS_RECORD_IDS; do
+		doctl compute domain records delete $DOMAIN $ID -f
+	done
+
+	# Create a new DNS entry pointing to the external IP
+	doctl compute domain records create $DOMAIN --record-type=A --record-name=$HOST --record-data=$HUBIP --record-ttl 30
+elif [[ $PROVIDER == aws ]]; then
+	hosted_zone_id=$(aws route53 list-hosted-zones | jq --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) | .Id ')
+	# remove trailing / preceeding quotes
+	hosted_zone_id="${hosted_zone_id%\"}"
+	hosted_zone_id="${hosted_zone_id#\"}"
+
+	resources=$(aws route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
+	record=$(echo $resources | jq --arg  HUB_FQDN "${HUB_FQDN}." ' .ResourceRecordSets | .[] | select(.Name==$HUB_FQDN and .Type=="A") ')
+
+	alias_hosted_zone_id=$(echo $record | jq ' .AliasTarget.HostedZoneId ')
+	alias_dns_name=$(echo $record | jq ' .AliasTarget.DNSName ')
+
+	evaluate_target_health=$(echo $record | jq ' .AliasTarget.EvaluateTargetHealth ')
+	# remove preceeding "dualstack.
+	CURIP="${alias_dns_name#\"dualstack.}"
+	# remove trailing ."
+	CURIP="${CURIP%.\"}"
+	
+	if [[ "$CURIP" == "$HUBIP" ]]; then
+		echo "DNS for $HUB_FQDN already points to the correct IP ($CURIP)."
+		exit
+	fi
+
+	if [[ -n $record ]]; then
+		# delete old A record
+		delete_request=$(cat <<EOF
+		{
+			"Comment": "Remove alias A record",   
+			"Changes": [
+				{
+				"Action": "DELETE",
+					"ResourceRecordSet": {
+						"Name": "${HUB_FQDN}.",
+						"Type": "A",
+						"AliasTarget": {
+							"HostedZoneId": ${alias_hosted_zone_id},
+							"DNSName": ${alias_dns_name},
+							"EvaluateTargetHealth": ${evaluate_target_health}
+						}
+					}
+				}
+			]
+		}
+EOF
+)
+		response=$(aws route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$delete_request")
+	fi
+
+	# create new record
+	new_alias_name="\"dualstack.${HUBIP}\""
+	evaluate_target_health="false"
+	load_balancer_hosted_zone=$(aws elb describe-load-balancers | jq --arg HUBIP "$HUBIP" ' .LoadBalancerDescriptions | .[]  | select(.DNSName==$HUBIP) | .CanonicalHostedZoneNameID ')
+	create_request=$(cat <<EOF
+		{
+			"Comment": "Create alias A record",   
+			"Changes": [
+				{
+				"Action": "CREATE",
+					"ResourceRecordSet": {
+						"Name": "${HUB_FQDN}.",
+						"Type": "A",
+						"AliasTarget": {
+							"HostedZoneId": ${load_balancer_hosted_zone},
+							"DNSName": ${new_alias_name},
+							"EvaluateTargetHealth": ${evaluate_target_health}
+						}
+					}
+				}
+			]
+		}
+EOF
+)
+	result=$(aws route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$create_request")
+else
+	echo "$PROVIDER not supported in gen-dns-sync"
+	exit -1
 fi
-
-# Delete any old DNS entries
-DNS_RECORD_IDS=$(doctl compute domain records list $DOMAIN -o json | jq ".[] | select( .name == \"$HOST\") | .id ")
-for ID in $DNS_RECORD_IDS; do
-	doctl compute domain records delete $DOMAIN $ID -f
-done
-
-# Create a new DNS entry pointing to the external IP
-doctl compute domain records create $DOMAIN --record-type=A --record-name=$HOST --record-data=$HUBIP --record-ttl 30
