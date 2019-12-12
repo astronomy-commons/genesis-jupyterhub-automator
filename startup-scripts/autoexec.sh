@@ -5,10 +5,10 @@ mkdir .managed-sources
 ## download the genesis streaming client library
 ## we don't bake it into the notebook image as it's still in heavy development and changes frequently
 ## hack: link additional libs from ~/.ipython, which shows up on the $PYTHONPATH
-git clone https://github.com/genesis-platform/genesis-client .managed-sources/genesis-client
+git clone https://github.com/astronomy-commons/genesis-client .managed-sources/genesis-client
 mkdir -p .ipython
 rm -f .ipython/genesis
 ln -s ../.managed-sources/genesis-client/genesis .ipython/genesis
 
 ## downlaod genesis demo
-gitpuller https://github.com/genesis-platform/genesis-streaming-demo master genesis-streaming-demo
+gitpuller https://github.com/astronomy-commons/tutorials master tutorials
