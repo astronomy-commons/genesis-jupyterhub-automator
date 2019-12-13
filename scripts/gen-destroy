@@ -16,8 +16,8 @@ assert_defined JHUB_HELM_RELEASE JHUB_K8S_NAMESPACE CLUSTER_NAME
 echo "===== *** WARNING *** WARNING *** WARNING *** ====="
 echo 
 echo "  This will *IRREVERSABLY* destroy:"
-echo "    - JupyterHub deployment $JHUB_HELM_RELEASE"
-echo "    - Kubernetes cluster $CLUSTER_NAME"
+echo "    - JupyterHub deployment $HUB_FQDN (Helm release '$JHUB_HELM_RELEASE')"
+echo "    - Kubernetes cluster '$CLUSTER_NAME' on provider '$PROVIDER'"
 echo ""
 echo "===== *** WARNING *** WARNING *** WARNING *** ====="
 
