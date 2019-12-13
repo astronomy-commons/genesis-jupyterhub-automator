@@ -39,9 +39,7 @@ elif [[ $PROVIDER == aws ]]; then
 		echo "Setting gp2 storage class to bind immediately to new pods."
 		kubectl delete storageclass gp2
 		updated_storage_class=$(echo $storage_class | jq ' .volumeBindingMode = "Immediate" ')
-		mkdir -p storage
-		echo $updated_storage_class >> storage/gp2.yaml
-		kubectl create -f storage/gp2.yaml
+		kubectl create -f <(echo $storage_class | jq ' .volumeBindingMode = "Immediate" ')
 	else
 		echo "gp2 storage class already set to bind immediately to new pods."
 	fi
