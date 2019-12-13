@@ -11,14 +11,14 @@ cd "$DIR/.."
 HOST=_acme-challenge.$(echo $CERTBOT_DOMAIN | cut -d . -f 1)
 DOMAIN=$(echo $CERTBOT_DOMAIN | cut -d . -f 2-)
 
-hosted_zone_id=$(aws route53 list-hosted-zones | jq --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) | .Id ')
+hosted_zone_id=$(aws --output=json route53 list-hosted-zones | jq --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) | .Id ')
 # remove trailing / preceeding quotes
 hosted_zone_id="${hosted_zone_id%\"}"
 hosted_zone_id="${hosted_zone_id#\"}"
 
 record_dns_name="${HOST}.${DOMAIN}"
 
-resources=$(aws route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
+resources=$(aws --output=json route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
 host_txt_record=$(echo $resources | jq --arg record_dns_name "${record_dns_name}." ' .ResourceRecordSets | .[] | select(.Name==$record_dns_name and .Type=="TXT")')
 
 if [[ $host_txt_record ]]; then
@@ -44,7 +44,7 @@ if [[ $host_txt_record ]]; then
     }
 EOF
 )
-    response=$(aws route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$delete_request")
+    response=$(aws --output=json route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$delete_request")
     [[ $response ]] || echo "Error sending request to route 53!"
 fi
 create_request=$(cat <<EOF
@@ -66,17 +66,17 @@ create_request=$(cat <<EOF
 }
 EOF
 )
-response=$(aws route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$create_request")
+response=$(aws --output=json route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$create_request")
 [[ $response ]] || echo "Error sending request to route 53!"
 
-resources=$(aws route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
+resources=$(aws --output=json route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
 host_txt_record=$(echo $resources | jq --arg record_dns_name "${record_dns_name}." ' .ResourceRecordSets | .[] | select(.Name==$record_dns_name and .Type=="TXT")')
 resource_records=$(echo $host_txt_record | jq '.ResourceRecords')
 value=$(echo $resource_records | jq '.[0] | .Value ')
 
 hdr=
 while [[ $value != "\"\\\"$CERTBOT_VALIDATION\\\"\"" ]]; do
-	resources=$(aws route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
+	resources=$(aws --output=json route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
 	host_txt_record=$(echo $resources | jq --arg record_dns_name "${record_dns_name}." ' .ResourceRecordSets | .[] | select(.Name==$record_dns_name and .Type=="TXT")')
 	resource_records=$(echo $host_txt_record | jq '.ResourceRecords')
 	value=$(echo $resource_records | jq '.[0] | .Value ')
