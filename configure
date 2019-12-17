@@ -14,7 +14,7 @@ TEMPLATES=($(ls templates/config/config.sh.* | grep -v '.*~'))
 # Check if a docker image exists in the (public) repository
 docker_tag_exists()
 {
-    curl --silent -f -lSL https://hub.docker.com/v2/repositories/$1/tags/$2 > /dev/null 2>&1
+		curl --silent -f -lSL https://hub.docker.com/v2/repositories/$1/tags/$2 > /dev/null 2>&1
 }
 
 # Parse a template files
@@ -102,18 +102,18 @@ check_do_prerequisites()
 check_aws_prerequisites()
 {
 	# see if we have eksctl
-	hash eksctl 2>/dev/null && msg check "  found eksctl" || { errmsg "  error: no eksctl on path. Install eksctl."; exit -1; }
+	hash eksctl 2>/dev/null && msg check "  found eksctl" || { errmsg "  error: no eksctl on path. Learn more about installing eksctl at https://eksctl.io/"; exit -1; }
 
-	hash aws 2>/dev/null && msg check "  found aws" || { errmsg "  error: no aws on path. Install AWS CLI tools."; exit -1; }
+	hash aws 2>/dev/null && msg check "  found aws" || { errmsg "  error: no aws on path. Learn more about installing AWS CLI tools at https://aws.amazon.com/cli/"; exit -1; }
 	
 	# see if we are authenticated
-	aws sts get-caller-identity >/dev/null 2>&1 && msg check "  logged into AWS" || { errmsg "  error: issues authenticating to AWS..."; exit -1; }
+	aws sts get-caller-identity >/dev/null 2>&1 && msg check "  logged into AWS" || { errmsg "  error: issues authenticating to AWS. Have you configured the AWS CLI with 'aws configure'? Find more information at https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html"; exit -1; }
 
 	# see if the domain has been properly set up
 	DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
 	output=$(aws --output=json route53 list-hosted-zones | jq --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) ')
 	if [[ -n $output ]]; then
-	  msg check "  AWS is managing $DOMAIN"
+		msg check "  AWS is managing $DOMAIN"
 	else
 		{ errmsg "  error: domain not found. Please delegate '$DOMAIN' to AWS's Route 53 service."; exit -1; }
 	fi
@@ -156,7 +156,7 @@ gen_proxy_secret()
 
 	cat > $PREFIX/secrets/proxy.yaml <<-EOF
 	proxy:
-	  secretToken: "$(openssl rand -hex 32)"
+		secretToken: "$(openssl rand -hex 32)"
 	EOF
 	
 	msg done "  generated $PREFIX/secrets/proxy.yaml"
@@ -204,23 +204,16 @@ gen_ssl()
 		return
 	fi
 	echo "Generating SSL certificates... This can take up to a minute."
+
 	# generate new certificates
-	if [[ $PROVIDER == do ]]; then
+	if [[ $PROVIDER == do || $PROVIDER == aws ]]; then
 		OUTPUT=$(certbot -d "$HUB_FQDN" \
 			--keep --manual \
 			--preferred-challenges dns certonly \
 			--config-dir $PREFIX/secrets/certbot/config --work-dir $PREFIX/secrets/certbot/work --logs-dir $PREFIX/secrets/certbot/logs \
 			-m "$LETSENCRYPT_EMAIL" \
 			--agree-tos --no-eff-email --manual-public-ip-logging-ok \
-			--manual-auth-hook=bin/certbot-auth.sh 2>&1)
-	elif [[ $PROVIDER == aws ]]; then
-		OUTPUT=$(certbot -d "$HUB_FQDN" \
-			--keep --manual \
-			--preferred-challenges dns certonly \
-			--config-dir $PREFIX/secrets/certbot/config --work-dir $PREFIX/secrets/certbot/work --logs-dir $PREFIX/secrets/certbot/logs \
-			-m "$LETSENCRYPT_EMAIL" \
-			--agree-tos --no-eff-email --manual-public-ip-logging-ok \
-			--manual-auth-hook=bin/certbot-auth.sh.aws 2>&1)
+			--manual-auth-hook=bin/certbot-auth.sh.${PROVIDER} 2>&1)
 	else
 		echo "$PROVIDER not supported in gen_ssl"
 		exit -1
@@ -235,14 +228,14 @@ gen_ssl()
 
 	cat > $PREFIX/secrets/ssl.yaml <<-EOF
 	proxy:
-	  https:
-	    hosts:
-	      - $HUB_FQDN
-	    type: manual
-	    manual:
-	      key: |
+		https:
+			hosts:
+				- $HUB_FQDN
+			type: manual
+			manual:
+				key: |
 	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/privkey.pem |  sed 's/^/        /')
-	      cert: |
+				cert: |
 	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
 	EOF
 
@@ -305,29 +298,63 @@ gen_config() {
 	# Make sure that PREFIX is valid
 	[[ -n "$PREFIX" ]] || { errmsg "error: --prefix is not set. aborting"; exit -1; }
 
-
-
 	# early validation
 	if [ $PROVIDER == "do" ]; then
-	  NODEPROPS=( $(doctl_size_list_json | jq -r '.[] | select(.slug == "'"$SIZE"'") | [.vcpus, .memory, .price_hourly] | @tsv ') )
+		NODEPROPS=( $(doctl_size_list_json | jq -r '.[] | select(.slug == "'"$SIZE"'") | [.vcpus, .memory, .price_hourly] | @tsv ') )
 		NODE_CPU=${NODEPROPS[0]}
 		NODE_MEMORY=${NODEPROPS[1]}
 		NODE_PRICE=${NODEPROPS[2]}
 	elif [ $PROVIDER == "aws" ]; then
-		REGION_DESCRIPTION=$(curl --silent https://raw.githubusercontent.com/boto/botocore/master/botocore/data/endpoints.json | jq --arg REGION "$REGION" '.partitions | .[0] | .regions | to_entries[] | {'key': .key, description: .value.description } | select(.key==$REGION) | .description')
-		REGION_DESCRIPTION="${REGION_DESCRIPTION%\"}"
-		REGION_DESCRIPTION="${REGION_DESCRIPTION#\"}"
+		REGION_DESCRIPTION=$(curl --silent https://raw.githubusercontent.com/boto/botocore/master/botocore/data/endpoints.json | jq -r --arg REGION "$REGION" '.partitions | .[0] | .regions | to_entries[] | {'key': .key, description: .value.description } | select(.key==$REGION) | .description')
 		msg check "  found description for $REGION, description is $REGION_DESCRIPTION"
-		# note that inner quotes are required in filter and variables need to be evaluated in filter
-		filter="[ { \"Type\": \"TERM_MATCH\", \"Field\": \"ServiceCode\", \"Value\": \"AmazonEC2\" }, { \"Type\": \"TERM_MATCH\", \"Field\": \"tenancy\", \"Value\": \"shared\" }, { \"Field\" : \"capacitystatus\", \"Value\" : \"Used\", \"Type\" : \"TERM_MATCH\" }, { \"Field\" : \"operatingSystem\", \"Value\" : \"Linux\", \"Type\" : \"TERM_MATCH\" }, { \"Field\" : \"instanceType\", \"Value\" : \"$SIZE\", \"Type\" : \"TERM_MATCH\" }, { \"Field\" : \"location\", \"Value\" : \"$REGION_DESCRIPTION\", \"Type\" : \"TERM_MATCH\" }, { \"Field\" : \"preInstalledSw\", \"Value\" : \"NA\", \"Type\" : \"TERM_MATCH\" } ]"
+		filter=$(cat <<-EOF
+			[
+				{ 
+					"Field" : "instanceType", 
+					"Value" : "$SIZE", 
+					"Type" : "TERM_MATCH" 
+				}, 
+				{ 
+					"Field" : "location", 
+					"Value" : "$REGION_DESCRIPTION", 
+					"Type" : "TERM_MATCH" 
+				}, 
 
+				{ 
+					"Type": "TERM_MATCH", 
+					"Field": "ServiceCode", 
+					"Value": "AmazonEC2" 
+				}, 
+				{ 
+					"Type": "TERM_MATCH", 
+					"Field": "tenancy", 
+					"Value": "shared" 
+				}, 
+				{ 
+					"Field" : "capacitystatus", 
+					"Value" : "Used", 
+					"Type" : "TERM_MATCH" 
+				}, 
+				{ 
+					"Field" : "operatingSystem", 
+					"Value" : "Linux", 
+					"Type" : "TERM_MATCH" 
+				}, 
+				{ 
+					"Field" : "preInstalledSw", 
+					"Value" : "NA", 
+					"Type" : "TERM_MATCH" 
+				} 
+			]
+			EOF
+		)
 		product=$(aws --output=json pricing --region us-east-1 get-products  --max-results 1 --service-code AmazonEC2 --filters "$filter" | jq ' .PriceList | .[] | fromjson')
-		NODE_CPU=$(echo $product | jq ' .product.attributes.vcpu | tonumber ')		
-		mem_gb=$(echo $product | jq ' .product.attributes | { "memory" : .memory } | map( . |= split(" ")) | .[0] | .[0] | tonumber ')
+		NODE_CPU=$(echo "$product" | jq ' .product.attributes.vcpu | tonumber ')		
+		mem_gb=$(echo "$product" | jq ' .product.attributes | { "memory" : .memory } | map( . |= split(" ")) | .[0] | .[0] | tonumber ')
 		NODE_MEMORY=$(($mem_gb * 1024))
-		NODE_PRICE=$(echo $product | jq ' .terms.OnDemand | map( . ) | .[0] | .priceDimensions | map( . ) | .[0] | .pricePerUnit.USD | tonumber ')
+		NODE_PRICE=$(echo "$product" | jq ' .terms.OnDemand | map( . ) | .[0] | .priceDimensions | map( . ) | .[0] | .pricePerUnit.USD | tonumber ')
 	else
-	  echo "Provider $PROVIDER not supported in gen_config()"
+		echo "Provider $PROVIDER not supported in gen_config()"
 		exit -1
 	fi
 

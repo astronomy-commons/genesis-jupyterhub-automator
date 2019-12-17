@@ -14,8 +14,8 @@ cd "$(dirname $DIR)"
 assert_defined HUB_FQDN JHUB_K8S_NAMESPACE
 
 # host and the domain
-HOST=$(echo $HUB_FQDN | cut -d . -f 1)
-DOMAIN=$(echo $HUB_FQDN | cut -d . -f 2-)
+HOST=$(echo "$HUB_FQDN" | cut -d . -f 1)
+DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
 
 # Find our external IP. This may take a few minutes
 HUBIP=
@@ -54,18 +54,15 @@ if [[ $PROVIDER == do ]]; then
 	# Create a new DNS entry pointing to the external IP
 	doctl compute domain records create $DOMAIN --record-type=A --record-name=$HOST --record-data=$HUBIP --record-ttl 30
 elif [[ $PROVIDER == aws ]]; then
-	hosted_zone_id=$(aws --output=json route53 list-hosted-zones | jq --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) | .Id ')
-	# remove trailing / preceeding quotes
-	hosted_zone_id="${hosted_zone_id%\"}"
-	hosted_zone_id="${hosted_zone_id#\"}"
+	hosted_zone_id=$(aws --output=json route53 list-hosted-zones | jq -r --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) | .Id ')
 
 	resources=$(aws --output=json route53 list-resource-record-sets --hosted-zone-id $hosted_zone_id)
-	record=$(echo $resources | jq --arg  HUB_FQDN "${HUB_FQDN}." ' .ResourceRecordSets | .[] | select(.Name==$HUB_FQDN and .Type=="A") ')
+	record=$(echo "$resources" | jq --arg  HUB_FQDN "${HUB_FQDN}." ' .ResourceRecordSets | .[] | select(.Name==$HUB_FQDN and .Type=="A") ')
 
-	alias_hosted_zone_id=$(echo $record | jq ' .AliasTarget.HostedZoneId ')
-	alias_dns_name=$(echo $record | jq ' .AliasTarget.DNSName ')
+	alias_hosted_zone_id=$(echo "$record" | jq ' .AliasTarget.HostedZoneId ')
+	alias_dns_name=$(echo "$record" | jq ' .AliasTarget.DNSName ')
 
-	evaluate_target_health=$(echo $record | jq ' .AliasTarget.EvaluateTargetHealth ')
+	evaluate_target_health=$(echo "$record" | jq ' .AliasTarget.EvaluateTargetHealth ')
 	# remove preceeding "dualstack.
 	CURIP="${alias_dns_name#\"dualstack.}"
 	# remove trailing ."
@@ -78,7 +75,7 @@ elif [[ $PROVIDER == aws ]]; then
 
 	if [[ -n $record ]]; then
 		# delete old A record
-		delete_request=$(cat <<EOF
+		delete_request=$(cat <<-EOF
 		{
 			"Comment": "Remove alias A record",   
 			"Changes": [
@@ -96,8 +93,8 @@ elif [[ $PROVIDER == aws ]]; then
 				}
 			]
 		}
-EOF
-)
+		EOF
+		)
 		response=$(aws --output=json route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$delete_request")
 	fi
 
@@ -105,7 +102,7 @@ EOF
 	new_alias_name="\"dualstack.${HUBIP}\""
 	evaluate_target_health="false"
 	load_balancer_hosted_zone=$(aws --output=json elb describe-load-balancers | jq --arg HUBIP "$HUBIP" ' .LoadBalancerDescriptions | .[]  | select(.DNSName==$HUBIP) | .CanonicalHostedZoneNameID ')
-	create_request=$(cat <<EOF
+	create_request=$(cat <<-EOF
 		{
 			"Comment": "Create alias A record",   
 			"Changes": [
@@ -123,9 +120,9 @@ EOF
 				}
 			]
 		}
-EOF
-)
-	result=$(aws --output=json route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$create_request")
+	EOF
+	)
+	response=$(aws --output=json route53 change-resource-record-sets --hosted-zone-id $hosted_zone_id --change-batch "$create_request")
 else
 	echo "$PROVIDER not supported in gen-dns-sync"
 	exit -1
