@@ -156,7 +156,7 @@ gen_proxy_secret()
 
 	cat > $PREFIX/secrets/proxy.yaml <<-EOF
 	proxy:
-		secretToken: "$(openssl rand -hex 32)"
+	  secretToken: "$(openssl rand -hex 32)"
 	EOF
 	
 	msg done "  generated $PREFIX/secrets/proxy.yaml"
@@ -228,14 +228,14 @@ gen_ssl()
 
 	cat > $PREFIX/secrets/ssl.yaml <<-EOF
 	proxy:
-		https:
-			hosts:
-				- $HUB_FQDN
-			type: manual
-			manual:
-				key: |
+	  https:
+	    hosts:
+	    - $HUB_FQDN
+	    type: manual
+	    manual:
+	    key: |
 	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/privkey.pem |  sed 's/^/        /')
-				cert: |
+	    cert: |
 	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
 	EOF
 
