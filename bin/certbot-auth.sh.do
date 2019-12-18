@@ -7,8 +7,8 @@ cd "$DIR/.."
 [[ -z "$CERTBOT_VALIDATION" ]] && { echo "error: this script is designed to run through 'certbot ... --manual-auth-hook=$0' (\$CERTBOT_VALIDATION is not set)."; exit -1; }
 [[ -z "$CERTBOT_DOMAIN" ]] && { echo "error: this script is designed to run through 'certbot ... --manual-auth-hook=$0' (\$CERTBOT_DOMAIN is not set)."; exit -1; }
 
-HOST=_acme-challenge.$(echo $CERTBOT_DOMAIN | cut -d . -f 1)
-DOMAIN=$(echo $CERTBOT_DOMAIN | cut -d . -f 2-)
+HOST=_acme-challenge.$(echo "$CERTBOT_DOMAIN" | cut -d . -f 1)
+DOMAIN=$(echo "$CERTBOT_DOMAIN" | cut -d . -f 2-)
 
 # Delete any old entries
 DNS_RECORD_IDS=$(doctl compute domain records list $DOMAIN -o json | jq ".[] | select( .name == \"$HOST\") | .id ")

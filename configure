@@ -14,7 +14,7 @@ TEMPLATES=($(ls templates/config/config.sh.* | grep -v '.*~'))
 # Check if a docker image exists in the (public) repository
 docker_tag_exists()
 {
-    curl --silent -f -lSL https://hub.docker.com/v2/repositories/$1/tags/$2 > /dev/null 2>&1
+		curl --silent -f -lSL https://hub.docker.com/v2/repositories/$1/tags/$2 > /dev/null 2>&1
 }
 
 # Parse a template files
@@ -99,6 +99,26 @@ check_do_prerequisites()
 	doctl compute domain records list "$DOMAIN" >/dev/null 2>&1 && msg check "  DO is managing $DOMAIN" || { errmsg "  error: domain not found. Please delegate '$DOMAIN' to DO's DNS service."; exit -1; }
 }
 
+check_aws_prerequisites()
+{
+	# see if we have eksctl
+	hash eksctl 2>/dev/null && msg check "  found eksctl" || { errmsg "  error: no eksctl on path. Learn more about installing eksctl at https://eksctl.io/"; exit -1; }
+
+	hash aws 2>/dev/null && msg check "  found aws" || { errmsg "  error: no aws on path. Learn more about installing AWS CLI tools at https://aws.amazon.com/cli/"; exit -1; }
+	
+	# see if we are authenticated
+	aws sts get-caller-identity >/dev/null 2>&1 && msg check "  logged into AWS" || { errmsg "  error: issues authenticating to AWS. Have you configured the AWS CLI with 'aws configure'? Find more information at https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html"; exit -1; }
+
+	# see if the domain has been properly set up
+	DOMAIN=$(echo "$HUB_FQDN" | cut -d . -f 2-)
+	output=$(aws --output=json route53 list-hosted-zones | jq --arg DOMAIN "${DOMAIN}." ' .HostedZones | .[] | select(.Name==$DOMAIN) ')
+	if [[ -n $output ]]; then
+		msg check "  AWS is managing $DOMAIN"
+	else
+		{ errmsg "  error: domain not found. Please delegate '$DOMAIN' to AWS's Route 53 service."; exit -1; }
+	fi
+}
+
 check_prerequisites()
 {
 	[[ $NOCHECKS == 1 ]] && return
@@ -119,6 +139,7 @@ check_prerequisites()
 	hash certbot 2>/dev/null && msg check "  found certbot" || { errmsg "  error: no certbot on path. Install certbot tools."; exit -1; }
 
 	[[ $PROVIDER == do ]] && check_do_prerequisites
+	[[ $PROVIDER == aws ]] && check_aws_prerequisites
 
 	echo
 }
@@ -182,15 +203,21 @@ gen_ssl()
 		msg skip "  skipping $PREFIX/secrets/ssl.yaml; already exists."
 		return
 	fi
+	echo "Generating SSL certificates... This can take up to a minute."
 
 	# generate new certificates
-	OUTPUT=$(certbot -d "$HUB_FQDN" \
-		--keep --manual \
-		--preferred-challenges dns certonly \
-		--config-dir $PREFIX/secrets/certbot/config --work-dir $PREFIX/secrets/certbot/work --logs-dir $PREFIX/secrets/certbot/logs \
-		-m "$LETSENCRYPT_EMAIL" \
-		--agree-tos --no-eff-email --manual-public-ip-logging-ok \
-		--manual-auth-hook=bin/certbot-auth.sh 2>&1)
+	if [[ $PROVIDER == do || $PROVIDER == aws ]]; then
+		OUTPUT=$(certbot -d "$HUB_FQDN" \
+			--keep --manual \
+			--preferred-challenges dns certonly \
+			--config-dir $PREFIX/secrets/certbot/config --work-dir $PREFIX/secrets/certbot/work --logs-dir $PREFIX/secrets/certbot/logs \
+			-m "$LETSENCRYPT_EMAIL" \
+			--agree-tos --no-eff-email --manual-public-ip-logging-ok \
+			--manual-auth-hook=bin/certbot-auth.sh.${PROVIDER} 2>&1)
+	else
+		echo "$PROVIDER not supported in gen_ssl"
+		exit -1
+	fi
 	if [[ $? -ne 0 ]]; then
 		errmsg "======="
 		errmsg "$OUTPUT"
@@ -203,12 +230,12 @@ gen_ssl()
 	proxy:
 	  https:
 	    hosts:
-	      - $HUB_FQDN
+	    - $HUB_FQDN
 	    type: manual
 	    manual:
-	      key: |
+	    key: |
 	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/privkey.pem |  sed 's/^/        /')
-	      cert: |
+	    cert: |
 	$(cat $PREFIX/secrets/certbot/config/live/$HUB_FQDN/fullchain.pem |  sed 's/^/        /')
 	EOF
 
@@ -271,13 +298,65 @@ gen_config() {
 	# Make sure that PREFIX is valid
 	[[ -n "$PREFIX" ]] || { errmsg "error: --prefix is not set. aborting"; exit -1; }
 
-
-
 	# early validation
-	NODEPROPS=( $(doctl_size_list_json | jq -r '.[] | select(.slug == "'"$SIZE"'") | [.vcpus, .memory, .price_hourly] | @tsv ') )
-	NODE_CPU=${NODEPROPS[0]}
-	NODE_MEMORY=${NODEPROPS[1]}
-	NODE_PRICE=${NODEPROPS[2]}
+	if [ $PROVIDER == "do" ]; then
+		NODEPROPS=( $(doctl_size_list_json | jq -r '.[] | select(.slug == "'"$SIZE"'") | [.vcpus, .memory, .price_hourly] | @tsv ') )
+		NODE_CPU=${NODEPROPS[0]}
+		NODE_MEMORY=${NODEPROPS[1]}
+		NODE_PRICE=${NODEPROPS[2]}
+	elif [ $PROVIDER == "aws" ]; then
+		REGION_DESCRIPTION=$(curl --silent https://raw.githubusercontent.com/boto/botocore/master/botocore/data/endpoints.json | jq -r --arg REGION "$REGION" '.partitions | .[0] | .regions | to_entries[] | {'key': .key, description: .value.description } | select(.key==$REGION) | .description')
+		msg check "  found description for $REGION, description is $REGION_DESCRIPTION"
+		filter=$(cat <<-EOF
+			[
+				{ 
+					"Field" : "instanceType", 
+					"Value" : "$SIZE", 
+					"Type" : "TERM_MATCH" 
+				}, 
+				{ 
+					"Field" : "location", 
+					"Value" : "$REGION_DESCRIPTION", 
+					"Type" : "TERM_MATCH" 
+				}, 
+
+				{ 
+					"Type": "TERM_MATCH", 
+					"Field": "ServiceCode", 
+					"Value": "AmazonEC2" 
+				}, 
+				{ 
+					"Type": "TERM_MATCH", 
+					"Field": "tenancy", 
+					"Value": "shared" 
+				}, 
+				{ 
+					"Field" : "capacitystatus", 
+					"Value" : "Used", 
+					"Type" : "TERM_MATCH" 
+				}, 
+				{ 
+					"Field" : "operatingSystem", 
+					"Value" : "Linux", 
+					"Type" : "TERM_MATCH" 
+				}, 
+				{ 
+					"Field" : "preInstalledSw", 
+					"Value" : "NA", 
+					"Type" : "TERM_MATCH" 
+				} 
+			]
+			EOF
+		)
+		product=$(aws --output=json pricing --region us-east-1 get-products  --max-results 1 --service-code AmazonEC2 --filters "$filter" | jq ' .PriceList | .[] | fromjson')
+		NODE_CPU=$(echo "$product" | jq ' .product.attributes.vcpu | tonumber ')		
+		mem_gb=$(echo "$product" | jq ' .product.attributes | { "memory" : .memory } | map( . |= split(" ")) | .[0] | .[0] | tonumber ')
+		NODE_MEMORY=$(($mem_gb * 1024))
+		NODE_PRICE=$(echo "$product" | jq ' .terms.OnDemand | map( . ) | .[0] | .priceDimensions | map( . ) | .[0] | .pricePerUnit.USD | tonumber ')
+	else
+		echo "Provider $PROVIDER not supported in gen_config()"
+		exit -1
+	fi
 
 	# CPU and memory overheads
 	# Estimated by inspecting "kubectl describe node s-4vcpu-8gb-a6hd"
@@ -299,8 +378,6 @@ gen_config() {
 	# cost per hour
 	cost_per_day=$(printf %.2f $(echo "$NODE_PRICE*$NODES*24" | bc))
 	storage_cost_per_user_per_day=$(printf %.2f $(echo "0.0015*$USER_DISK*24" | bc))
-
-
 
 	# Generate output directory skeleton
 	mkdir -p "$PREFIX"/{secrets,values}
@@ -380,6 +457,14 @@ gen_values_yaml() {
 	msg done "  generated $PREFIX/values/values.yaml"
 }
 
+gen_eksctl()
+{
+	mkdir -p "$PREFIX/eksctl"
+	cp_with_subst templates/eksctl/cluster.yaml.sht $PREFIX/eksctl/cluster.yaml
+	msg done "  generated $PREFIX/eksctl/cluster.yaml.sht"
+}
+
+
 show_summary() {
 	echo
 	echo "========================================================================="
@@ -394,6 +479,7 @@ show_summary() {
 	echo "      Compute cluster: \$$cost_per_day/day"
 	echo "      User storage: \$$storage_cost_per_user_per_day/user/day"
 	echo "    Kubernetes version: $K8S_VERSION"
+	echo "    Kubernetes cluster name: ${CLUSTER_NAME}"
 	echo ""
 	echo "  Environment:"
 	echo "    Each user is guaranteed ${USER_CPU}vcpus, ${USER_MEMORY}gib RAM, and ${USER_DISK}GiB of disk space"
@@ -517,6 +603,8 @@ gen_github_auth
 gen_images
 gen_autoexec
 gen_values_yaml
+
+[[ $PROVIDER == aws ]] && gen_eksctl
 
 show_summary
 

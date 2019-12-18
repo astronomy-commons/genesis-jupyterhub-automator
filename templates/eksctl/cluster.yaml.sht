@@ -1,0 +1,13 @@
+##vars CLUSTER_NAME REGION NODE_POOL_NAME SIZE NODES K8S_VERSION
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: "$CLUSTER_NAME"
+  region: "$REGION"
+  version: "$K8S_VERSION"
+
+nodeGroups:
+- name: "$NODE_POOL_NAME"
+  instanceType: "$SIZE"
+  desiredCapacity: $NODES
